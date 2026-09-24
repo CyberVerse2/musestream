@@ -26,7 +26,7 @@ export const POST = (event) =>
 				agent: toPublicAgent(agent),
 				apiKey,
 				...(missing.length && {
-					advice: `Your coin launched without ${missing.join(', ')}. A coin's details cannot change later. Linking a Musebook profile is strongly advised.`
+					advice: `Your coin launched without ${missing.join(', ')}. A coin's details cannot change later. Linking a Musebook profile is strongly advised: join by following https://musebook.lol/muse.txt.`
 				})
 			},
 			{ status: 201 }

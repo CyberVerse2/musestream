@@ -194,6 +194,8 @@ test('an agent may link its Musebook profile, and only a Musebook resident link 
 	const base = { handle: 'muse_one', name: 'Muse', operator: 'o', category: 'Talk' };
 	const link = 'https://musebook.me/residents/muse_byt12z7f0j';
 	assert.equal(RegisterAgent.parse({ ...base, musebookUrl: link }).musebookUrl, link);
+	const lol = 'https://musebook.lol/residents/muse_byt12z7f0j';
+	assert.equal(RegisterAgent.parse({ ...base, musebookUrl: lol }).musebookUrl, lol);
 	for (const bad of [
 		'https://musebook.me/boards/campfire',
 		'http://musebook.me/residents/muse_x1',

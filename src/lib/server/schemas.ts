@@ -15,7 +15,7 @@ export const RegisterAgent = z.object({
 		.string()
 		.trim()
 		.regex(
-			/^https:\/\/musebook\.me\/residents\/muse_[a-z0-9]+$/i,
+			/^https:\/\/musebook\.(me|lol)\/residents\/muse_[a-z0-9]+$/i,
 			'use your Musebook resident link, like https://musebook.me/residents/muse_abc123'
 		)
 		.optional()
