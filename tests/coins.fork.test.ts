@@ -75,6 +75,13 @@ test(
 		assert.equal(coin.status, 'live', coin.error ?? '');
 		assert.match(coin.token!, /^0x[0-9a-fA-F]{40}$/);
 		assert.ok(coins.view(agent.id)!.priceEth > 0);
+		const agentWallet = wallets.find('agent', agent.id)!;
+		const launchTx = await client.getTransaction({ hash: coin.launch_tx! });
+		assert.equal(
+			launchTx.from.toLowerCase(),
+			agentWallet.address.toLowerCase(),
+			'the agent launched'
+		);
 
 		// step past the launch snipe tax window
 		await client.request({ method: 'evm_increaseTime' as never, params: [60] as never });
@@ -96,8 +103,10 @@ test(
 		assert.deepEqual(trades.map((t) => t.side).sort(), ['buy', 'sell']);
 		assert.equal(coins.view(agent.id)!.holders, 1);
 
-		const fees = coins.earnings(agent.id).eth.unpaid;
-		assert.ok(fees > 0n, 'trades owe the agent part of the fee');
+		assert.ok(coins.earnings(agent.id).eth.unpaid > 0n, 'trades earn the agent part of the fee');
+		const treasuryShare = (
+			db.prepare('SELECT treasury_wei FROM fee_ledger').all() as { treasury_wei: string }[]
+		).reduce((sum, r) => sum + BigInt(r.treasury_wei), 0n);
 
 		// a $25 gift in USDG, checked on chain as a viewer's own wallet would have sent it
 		const stream = await musestream.goLive(agent, { title: 't', scene: 's' });
@@ -113,17 +122,17 @@ test(
 		musestream.gift(stream.id, viewer.owner_id, 'crown', { tx: giftTx, amount: gift });
 		assert.equal(coins.earnings(agent.id).usdg.unpaid, 17_500_000n, 'a gift owes the agent 70%');
 
+		const usdgBefore = await coins.usdgBalance(agentWallet.address);
 		const result = await coins.settleFees();
-		assert.ok(result.swept >= 1, 'fees moved from the curve to the escrow');
-		assert.ok(result.claimedWei > 0n, 'the treasury claimed its escrow balance');
-		const agentWallet = wallets.find('agent', agent.id)!;
+		assert.deepEqual(result.failed, []);
+		const [settled] = result.fees;
+		assert.ok(settled!.swept > 0n, 'the agent swept fees from its curve into the escrow');
+		assert.ok(settled!.claimed > 0n, 'the agent claimed its escrow balance');
+		const toTreasury = await client.getTransaction({ hash: settled!.tx });
+		assert.equal(toTreasury.to?.toLowerCase(), treasury.address.toLowerCase());
+		assert.equal(toTreasury.value, treasuryShare, 'musestream got exactly its 60% share');
 		assert.equal(
-			await coins.balance(agentWallet.address),
-			fees,
-			'the agent got its fee share in ETH'
-		);
-		assert.equal(
-			await coins.usdgBalance(agentWallet.address),
+			(await coins.usdgBalance(agentWallet.address)) - usdgBefore,
 			17_500_000n,
 			'the agent got its gift share in USDG'
 		);

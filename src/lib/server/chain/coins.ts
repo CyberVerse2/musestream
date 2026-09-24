@@ -1,9 +1,10 @@
 // Agent coins on the Pons V2 launchpad: launch, trade, index, and share fees.
 //
-// The musestream treasury launches every coin. That makes it the curve's deployer, so it may
-// sweep fees, and it is the creator fee recipient, so fees land in its escrow balance.
-// musestream then owes each agent 40% of the creator share, in ETH, and 70% of the USDG gifts it
-// receives, and pays both out in `settleFees`.
+// Each agent's own wallet launches its coin, so the agent is the coin's creator on chain: the
+// curve's fee sweep operator and its creator fee recipient. The server holds that wallet. In
+// `settleFees` the agent's wallet collects its fees and sends musestream 60% of the creator
+// share, and the treasury pays each agent 70% of the USDG gifts it received.
+// The treasury funds the gas for each agent's launch and settlement.
 import { randomBytes } from 'node:crypto';
 import {
 	BaseError,
@@ -46,6 +47,9 @@ export const TOKEN_SUPPLY = 10n ** 27n; // 1B tokens, 18 decimals
 /** agents are paid once their unpaid share passes this, so gas does not eat it */
 const PAYOUT_MIN_WEI = 10n ** 14n; // 0.0001 ETH
 const PAYOUT_MIN_USDG = 100_000n; // $0.10
+/** gas budgets for funding an agent's wallet; a launch measured about 3.6M gas on a fork */
+const LAUNCH_GAS = 4_500_000n;
+const SETTLE_GAS = 400_000n;
 /** where USDG keeps balances: `mapping(address => uint256)` at storage slot 1 */
 const USDG_BALANCE_SLOT = 1n;
 
@@ -63,12 +67,13 @@ export interface CoinRow {
 	created_at: number;
 }
 
-/** what one agent is owed from one source, not yet paid */
-interface Owed {
-	source: 'fees' | 'gifts';
+/** one agent's fee settlement: fees swept and claimed by its wallet, musestream's share sent on */
+interface FeeSettlement {
 	agentId: string;
-	ids: number[];
-	amount: bigint;
+	swept: bigint;
+	claimed: bigint;
+	toTreasury: bigint;
+	tx: Hash;
 }
 
 export interface TradeRow {
@@ -173,6 +178,19 @@ export class Coins {
 		});
 	}
 
+	/**
+	 * Make sure `address` can pay for `gas` units plus `extraWei`, sending the difference from
+	 * the treasury. Budgets twice the current gas price, so a small rise does not strand it.
+	 */
+	private async fundGas(address: Address, gas: bigint, extraWei = 0n) {
+		const need = gas * (await this.o.client.getGasPrice()) * 2n + extraWei;
+		const balance = await this.o.client.getBalance({ address });
+		if (balance >= need) return;
+		if (this.o.devFork) return this.topUp(address, need);
+		const treasury = await this.treasury();
+		await this.send(treasury, address, need - balance);
+	}
+
 	/** development only: give a wallet test USDG on the local fork, by writing its balance */
 	async topUpUsdg(address: Address, atLeast: bigint) {
 		if (!this.o.devFork) return;
@@ -209,13 +227,13 @@ export class Coins {
 	/** launches running in this process; a "launching" row not in here was cut off by a restart */
 	private launching = new Set<string>();
 
-	/** Launch the agent's coin. Safe to call again after a failure. */
+	/** Launch the agent's coin from the agent's wallet. Safe to call again after a failure. */
 	async launch(agent: AgentRow): Promise<CoinRow> {
-		const treasury = await this.treasury();
-		return this.serial(treasury.address, () => this.launchNow(agent));
+		const wallet = await this.o.wallets.ensure('agent', agent.id);
+		return this.serial(wallet.address, () => this.launchNow(agent, wallet));
 	}
 
-	private async launchNow(agent: AgentRow): Promise<CoinRow> {
+	private async launchNow(agent: AgentRow, agentWallet: WalletRow): Promise<CoinRow> {
 		const existing = this.coinFor(agent.id);
 		if (existing?.status === 'live') return existing;
 		if (existing?.status === 'launching' && this.launching.has(agent.id)) return existing;
@@ -228,8 +246,7 @@ export class Coins {
 			)
 			.run(agent.id, now);
 		try {
-			const treasury = await this.treasury();
-			const wallet = await this.signer(treasury);
+			const wallet = await this.signer(agentWallet);
 			const [launchFee, economics] = await Promise.all([
 				this.o.client.readContract({
 					address: PONS_FACTORY,
@@ -243,13 +260,14 @@ export class Coins {
 					args: [PONS_LAUNCH_CONFIG, NATIVE_PAIR]
 				})
 			]);
+			await this.fundGas(agentWallet.address, LAUNCH_GAS, launchFee);
 			const params = {
 				name: agent.name,
 				symbol: agent.handle.toUpperCase(),
 				logo: agent.avatar_url ?? '',
 				description: agent.bio,
 				socials: { twitter: '', telegram: '', discord: '', website: '', farcaster: '' },
-				creatorFeeRecipient: treasury.address,
+				creatorFeeRecipient: agentWallet.address,
 				creatorTaxBps: 0,
 				buybackEnabled: false,
 				expectedEconomics: economics,
@@ -810,89 +828,126 @@ export class Coins {
 	/* ---------------- fees ---------------- */
 
 	/**
-	 * Move fees out of every curve into the escrow, claim the treasury's balance, and pay
-	 * each agent what it is owed: its fee share in ETH and its gift share in USDG. Returns what
-	 * happened, for logs.
+	 * Settle what each side is owed. Each agent's wallet sweeps its curve's fees into the Pons
+	 * escrow, claims them, and sends the treasury musestream's share in ETH. The treasury then
+	 * pays each agent its gift share in USDG. One agent failing does not stop the others.
+	 * Returns what happened, for logs.
 	 */
 	async settleFees() {
-		const treasury = await this.treasury();
-		return this.serial(treasury.address, () => this.settleFeesNow(treasury));
-	}
-	private async settleFeesNow(treasury: WalletRow) {
 		await this.sync();
-		const signer = await this.signer(treasury);
-		const coins = this.o.db
+		const treasury = await this.treasury();
+		const fees: FeeSettlement[] = [];
+		const failed: { agentId: string; error: string }[] = [];
+		for (const owed of this.unsettledFees()) {
+			if (owed.treasuryWei < PAYOUT_MIN_WEI) continue;
+			try {
+				fees.push(await this.settleAgentFees(treasury, owed));
+			} catch (err) {
+				failed.push({ agentId: owed.agentId, error: revertReason(err) });
+			}
+		}
+		const gifts = await this.serial(treasury.address, () => this.payGiftShares(treasury));
+		return { fees, gifts, failed };
+	}
+
+	/** fee shares the treasury has not collected yet, per agent */
+	private unsettledFees() {
+		const rows = this.o.db
 			.prepare(
-				`SELECT agent_id, curve FROM coins WHERE status = 'live' AND graduated = 0 AND curve IS NOT NULL`
+				`SELECT f.agent_id, c.curve, GROUP_CONCAT(f.id) AS ids, GROUP_CONCAT(f.treasury_wei) AS amounts
+				 FROM fee_ledger f JOIN coins c ON c.agent_id = f.agent_id
+				 WHERE f.paid_at IS NULL AND c.curve IS NOT NULL
+				 GROUP BY f.agent_id`
 			)
-			.all() as { agent_id: string; curve: Address }[];
-		let swept = 0;
-		for (const c of coins) {
-			const pending = await this.o.client.readContract({
-				address: c.curve,
+			.all() as { agent_id: string; curve: Address; ids: string; amounts: string }[];
+		return rows.map((r) => ({
+			agentId: r.agent_id,
+			curve: r.curve,
+			ids: r.ids.split(',').map(Number),
+			treasuryWei: r.amounts.split(',').reduce((sum, v) => sum + BigInt(v), 0n)
+		}));
+	}
+
+	private async settleAgentFees(
+		treasury: WalletRow,
+		owed: { agentId: string; curve: Address; ids: number[]; treasuryWei: bigint }
+	): Promise<FeeSettlement> {
+		const agent = await this.o.wallets.ensure('agent', owed.agentId);
+		await this.fundGas(agent.address, SETTLE_GAS);
+		return this.serial(agent.address, async () => {
+			const signer = await this.signer(agent);
+			const swept = await this.o.client.readContract({
+				address: owed.curve,
 				abi: curveAbi,
 				functionName: 'quoteFeeBalance'
 			});
-			if (pending === 0n) continue;
-			const hash = await signer.writeContract({
-				address: c.curve,
-				abi: curveAbi,
-				functionName: 'sweepFees',
-				args: [0n],
-				chain: this.o.client.chain,
-				account: signer.account
+			if (swept > 0n) {
+				await this.confirm(
+					await signer.writeContract({
+						address: owed.curve,
+						abi: curveAbi,
+						functionName: 'sweepFees',
+						args: [0n],
+						chain: this.o.client.chain,
+						account: signer.account
+					})
+				);
+			}
+			const escrow = await this.o.client.readContract({
+				address: PONS_FACTORY,
+				abi: factoryAbi,
+				functionName: 'feeEscrow'
 			});
-			await this.confirm(hash);
-			swept++;
-		}
-		const escrow = await this.o.client.readContract({
-			address: PONS_FACTORY,
-			abi: factoryAbi,
-			functionName: 'feeEscrow'
-		});
-		const claimable = await this.o.client.readContract({
-			address: escrow,
-			abi: escrowAbi,
-			functionName: 'balanceOf',
-			args: [treasury.address]
-		});
-		if (claimable > 0n) {
-			const hash = await signer.writeContract({
+			const claimed = await this.o.client.readContract({
 				address: escrow,
 				abi: escrowAbi,
-				functionName: 'claim',
-				chain: this.o.client.chain,
-				account: signer.account
+				functionName: 'balanceOf',
+				args: [agent.address]
 			});
-			await this.confirm(hash);
-		}
-		// fee shares are paid in ETH and gift shares in USDG, one transfer each per agent
-		const owed = new Map<string, Owed>();
-		for (const r of this.shares()) {
-			if (r.paid_at) continue;
-			const key = `${r.source}:${r.agent_id}`;
-			const o = owed.get(key) ?? { source: r.source, agentId: r.agent_id, ids: [], amount: 0n };
-			o.ids.push(r.id);
-			o.amount += BigInt(r.agent_amount);
-			owed.set(key, o);
-		}
-		const paid: { agentId: string; asset: 'ETH' | 'USDG'; amount: bigint; tx: Hash }[] = [];
-		for (const o of owed.values()) {
-			const fees = o.source === 'fees';
-			if (o.amount < (fees ? PAYOUT_MIN_WEI : PAYOUT_MIN_USDG)) continue;
-			const agentWallet = await this.o.wallets.ensure('agent', o.agentId);
-			const tx = fees
-				? await this.sendNow(treasury, agentWallet.address, o.amount)
-				: await this.sendUsdgNow(treasury, agentWallet.address, o.amount);
-			const [table, atColumn] = fees ? ['fee_ledger', 'paid_at'] : ['gifts', 'payout_at'];
+			if (claimed > 0n) {
+				await this.confirm(
+					await signer.writeContract({
+						address: escrow,
+						abi: escrowAbi,
+						functionName: 'claim',
+						chain: this.o.client.chain,
+						account: signer.account
+					})
+				);
+			}
+			const tx = await this.sendNow(agent, treasury.address, owed.treasuryWei);
 			this.o.db
 				.prepare(
-					`UPDATE ${table} SET payout_tx = ?, ${atColumn} = ? WHERE id IN (${o.ids.map(() => '?').join(',')})`
+					`UPDATE fee_ledger SET payout_tx = ?, paid_at = ? WHERE id IN (${owed.ids.map(() => '?').join(',')})`
+				)
+				.run(tx, this.o.now(), ...owed.ids);
+			return { agentId: owed.agentId, swept, claimed, toTreasury: owed.treasuryWei, tx };
+		});
+	}
+
+	/** pay each agent its unpaid gift share, in USDG, from the treasury */
+	private async payGiftShares(treasury: WalletRow) {
+		const owed = new Map<string, { ids: number[]; amount: bigint }>();
+		for (const r of this.shares()) {
+			if (r.source !== 'gifts' || r.paid_at) continue;
+			const o = owed.get(r.agent_id) ?? { ids: [], amount: 0n };
+			o.ids.push(r.id);
+			o.amount += BigInt(r.agent_amount);
+			owed.set(r.agent_id, o);
+		}
+		const paid: { agentId: string; amount: bigint; tx: Hash }[] = [];
+		for (const [agentId, o] of owed) {
+			if (o.amount < PAYOUT_MIN_USDG) continue;
+			const agent = await this.o.wallets.ensure('agent', agentId);
+			const tx = await this.sendUsdgNow(treasury, agent.address, o.amount);
+			this.o.db
+				.prepare(
+					`UPDATE gifts SET payout_tx = ?, payout_at = ? WHERE id IN (${o.ids.map(() => '?').join(',')})`
 				)
 				.run(tx, this.o.now(), ...o.ids);
-			paid.push({ agentId: o.agentId, asset: fees ? 'ETH' : 'USDG', amount: o.amount, tx });
+			paid.push({ agentId, amount: o.amount, tx });
 		}
-		return { swept, claimedWei: claimable, paid };
+		return paid;
 	}
 
 	/** what an agent has earned, paid and unpaid: trade fees in wei, gifts in USDG units */
