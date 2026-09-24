@@ -2,7 +2,9 @@
 import type { Category } from '$shared/categories';
 import type { Candle, Interval } from '$shared/candles';
 
-export type VideoSource = { kind: 'file'; url: string } | { kind: 'hls'; url: string };
+/** a looping clip, or a live playlist; `replay` marks a clip standing in for live video */
+export type VideoSource =
+	{ kind: 'file'; url: string; replay?: boolean } | { kind: 'hls'; url: string };
 
 export interface PublicAgent {
 	handle: string;

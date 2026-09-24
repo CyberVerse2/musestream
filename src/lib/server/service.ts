@@ -3,7 +3,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DB } from './db.ts';
 import { Hub } from './hub.ts';
-import type { VideoProvider, VideoSource } from './video/provider.ts';
+import type { StreamInfo, VideoProvider, VideoSource } from './video/provider.ts';
 
 import type { Category } from '../../../shared/categories.ts';
 import { splitGift } from '../../../shared/fees.ts';
@@ -93,6 +93,15 @@ export class RateLimit {
 
 function hashKey(key: string) {
 	return createHash('sha256').update(key).digest('hex');
+}
+
+function streamInfo(stream: StreamRow, agent: AgentRow): StreamInfo {
+	return {
+		streamId: stream.id,
+		agentId: agent.id,
+		avatarUrl: agent.avatar_url,
+		handle: agent.handle
+	};
 }
 
 export class Musestream {
@@ -296,10 +305,7 @@ export class Musestream {
 			)
 			.run(stream.id, this.provider.name, prompt, this.now());
 		try {
-			const source = await this.provider.render(
-				{ streamId: stream.id, avatarUrl: agent.avatar_url, handle: agent.handle },
-				prompt
-			);
+			const source = await this.provider.render(streamInfo(stream, agent), prompt);
 			// a newer scene or the end of the stream may have arrived while this one rendered
 			const live = this.currentStream(agent.id);
 			if (live?.id !== stream.id || live.scene !== prompt) return;
@@ -387,15 +393,21 @@ export class Musestream {
 	/* ---------------- viewers ---------------- */
 
 	viewerJoined(streamId: string) {
-		const n = (this.viewers.get(streamId) ?? 0) + 1;
-		this.viewers.set(streamId, n);
-		this.hub.emit(streamId, { type: 'viewers', viewers: n });
+		this.setViewers(streamId, (this.viewers.get(streamId) ?? 0) + 1);
 	}
 	viewerLeft(streamId: string) {
-		const n = Math.max(0, (this.viewers.get(streamId) ?? 0) - 1);
+		this.setViewers(streamId, Math.max(0, (this.viewers.get(streamId) ?? 0) - 1));
+	}
+	private setViewers(streamId: string, n: number) {
 		if (n) this.viewers.set(streamId, n);
 		else this.viewers.delete(streamId);
 		this.hub.emit(streamId, { type: 'viewers', viewers: n });
+		// paid video runs only while someone watches
+		const stream = this.db
+			.prepare('SELECT * FROM streams WHERE id = ? AND ended_at IS NULL')
+			.get(streamId) as StreamRow | undefined;
+		const agent = stream && this.agentById(stream.agent_id);
+		if (stream && agent) this.provider.watchers?.(streamInfo(stream, agent), stream.scene, n);
 	}
 	viewerCount(streamId: string) {
 		return this.viewers.get(streamId) ?? 0;

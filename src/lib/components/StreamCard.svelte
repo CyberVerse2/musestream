@@ -67,6 +67,9 @@
 		<HostPill {agent} />
 		<div class="room">
 			<span class="live-badge">LIVE</span>
+			{#if agent.video?.kind === 'file' && agent.video.replay}
+				<span class="replay-badge">REPLAY</span>
+			{/if}
 			<span class="viewers"><Eye size={14} weight="bold" />{fmtTok(agent.viewers)}</span>
 			<button
 				class="sound press"
@@ -139,6 +142,19 @@
 	.room .live-badge {
 		height: 24px;
 		padding: 0 8px;
+	}
+	/* the stream is live, but its picture is a saved clip until paid video runs again */
+	.replay-badge {
+		display: inline-flex;
+		align-items: center;
+		height: 24px;
+		padding: 0 8px;
+		border-radius: 6px;
+		background: var(--glass);
+		color: #fff;
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.04em;
 	}
 	.viewers {
 		display: inline-flex;

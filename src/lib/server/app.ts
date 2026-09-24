@@ -13,6 +13,7 @@ import { LocalWallets, Sealer, Wallets, type WalletProvider } from './chain/wall
 import { openDb } from './db.ts';
 import { Musestream } from './service.ts';
 import { MockVideo } from './video/mock.ts';
+import { VideoBudget } from './video/budget.ts';
 import type { VideoProvider } from './video/provider.ts';
 import { ReactorVideo } from './video/reactor.ts';
 
@@ -37,6 +38,9 @@ function videoProvider(): VideoProvider {
 			agents,
 			maxSessions: Math.min(5, Math.max(1, Number(env.REACTOR_MAX_SESSIONS ?? 1))),
 			maxSeconds: Math.min(600, Math.max(10, Number(env.REACTOR_MAX_SECONDS ?? 60))),
+			idleSeconds: Math.max(0, Number(env.REACTOR_IDLE_SECONDS ?? 30)),
+			// 10 minutes of paid video per agent per UTC day
+			budget: new VideoBudget(db, Math.max(0, Number(env.REACTOR_DAILY_SECONDS ?? 600))),
 			mediaDir: MEDIA_DIR,
 			workerDir: resolve('video-worker'),
 			fallback: mock

@@ -161,6 +161,15 @@ const MIGRATIONS: string[] = [
 		paid_at      INTEGER,
 		UNIQUE (tx, log_index)
 	);
+	`,
+	// paid video used per agent per UTC day, against the daily allowance
+	`
+	CREATE TABLE video_usage (
+		agent_id  TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		day       TEXT NOT NULL,
+		seconds   REAL NOT NULL,
+		PRIMARY KEY (agent_id, day)
+	);
 	`
 ];
 

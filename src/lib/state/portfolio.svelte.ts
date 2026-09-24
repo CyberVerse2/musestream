@@ -50,7 +50,11 @@ export function holdingOf(handle: string) {
 async function sendAll(q: Quote) {
 	const { sendFromWallet } = await import('../wallet/dynamic');
 	for (const tx of q.txs) {
-		await sendFromWallet({ to: tx.to, data: tx.data, value: tx.value ? BigInt(tx.value) : undefined });
+		await sendFromWallet({
+			to: tx.to,
+			data: tx.data,
+			value: tx.value ? BigInt(tx.value) : undefined
+		});
 	}
 }
 

@@ -112,10 +112,16 @@ export async function sendFromWallet(tx: TxRequest): Promise<`0x${string}`> {
 		chain: dynamicWallet.chain,
 		transport: http(rpcUrl)
 	});
-	const hash = await wallet.sendTransaction({ ...tx, account: wallet.account, chain: wallet.chain });
+	const hash = await wallet.sendTransaction({
+		...tx,
+		account: wallet.account,
+		chain: wallet.chain
+	});
 	const { createPublicClient } = await import('viem');
-	const receipt = await createPublicClient({ chain: wallet.chain, transport: http(rpcUrl) })
-		.waitForTransactionReceipt({ hash });
+	const receipt = await createPublicClient({
+		chain: wallet.chain,
+		transport: http(rpcUrl)
+	}).waitForTransactionReceipt({ hash });
 	if (receipt.status !== 'success') throw new Error('The transaction was reverted.');
 	return hash;
 }
