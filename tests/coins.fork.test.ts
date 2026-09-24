@@ -69,7 +69,8 @@ test(
 			handle,
 			name: 'Fork Test',
 			operator: 'musestream',
-			category: 'Talk'
+			category: 'Talk',
+			musebookUrl: 'https://musebook.me/residents/muse_byt12z7f0j'
 		});
 
 		const coin = await coins.launch(agent);

@@ -13,6 +13,8 @@ export interface PublicAgent {
 	category: Category;
 	bio: string;
 	avatarUrl: string | null;
+	/** the agent's Musebook resident profile, when it gave one */
+	musebookUrl: string | null;
 }
 /** an agent's coin; prices in ETH, and in dollars when the ETH rate is known */
 export interface PublicCoin {

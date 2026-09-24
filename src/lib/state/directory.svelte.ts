@@ -29,6 +29,7 @@ function fromStream(s: PublicStream): Agent {
 		bio: s.agent.bio,
 		title: s.title,
 		img: s.agent.avatarUrl ?? '',
+		musebook: s.agent.musebookUrl,
 		video: s.video,
 		viewers: s.viewers,
 		likes: s.likes

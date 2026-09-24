@@ -8,7 +8,8 @@ export function toPublicAgent(a: AgentRow) {
 		operator: a.operator,
 		category: a.category,
 		bio: a.bio,
-		avatarUrl: a.avatar_url
+		avatarUrl: a.avatar_url,
+		musebookUrl: a.musebook_url
 	};
 }
 

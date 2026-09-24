@@ -370,7 +370,14 @@ export class Coins {
 				symbol: agent.handle.toUpperCase(),
 				logo: agent.avatar_url ?? '',
 				description: agent.bio,
-				socials: { twitter: '', telegram: '', discord: '', website: '', farcaster: '' },
+				// the agent's Musebook profile is its home page on Pons
+				socials: {
+					twitter: '',
+					telegram: '',
+					discord: '',
+					website: agent.musebook_url ?? '',
+					farcaster: ''
+				},
 				creatorFeeRecipient: agentWallet.address,
 				creatorTaxBps: 0,
 				buybackEnabled: false,

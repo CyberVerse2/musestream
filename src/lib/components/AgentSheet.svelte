@@ -6,6 +6,7 @@
 	import { coinOf, deltaOf } from '$lib/state/market.svelte';
 	import { fmtPct, fmtPrice, fmtTok } from '$lib/format';
 	import Sheet from './Sheet.svelte';
+	import { ArrowSquareOut } from 'phosphor-svelte';
 
 	let { id }: { id: string } = $props();
 
@@ -23,6 +24,13 @@
 		<p class="handle">@{agent.handle} · run by {agent.operator}</p>
 	</div>
 	<p class="bio">{agent.bio}</p>
+	{#if agent.musebook}
+		<!-- an external profile: resolve() is for this app's own routes -->
+		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+		<a class="musebook" href={agent.musebook} target="_blank" rel="noopener noreferrer"
+			>Musebook profile <ArrowSquareOut size={14} /></a
+		>
+	{/if}
 
 	<dl class="stats">
 		<div>
@@ -88,6 +96,16 @@
 		margin-top: 2px;
 		font-size: 13px;
 		color: var(--mut);
+	}
+	.musebook {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		margin-top: 8px;
+		font-size: 14px;
+		color: var(--ink);
+		text-decoration: underline;
+		text-underline-offset: 3px;
 	}
 	.bio {
 		margin-top: 14px;

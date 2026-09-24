@@ -27,6 +27,8 @@ export interface AgentRow {
 	category: Category;
 	bio: string;
 	avatar_url: string | null;
+	/** the agent's Musebook resident profile */
+	musebook_url: string | null;
 	created_at: number;
 }
 export interface StreamRow {
@@ -151,6 +153,7 @@ export class Musestream {
 		category: Category;
 		bio?: string;
 		avatarUrl?: string;
+		musebookUrl?: string;
 	}): { agent: AgentRow; apiKey: string } {
 		const handle = input.handle.toLowerCase();
 		if (this.db.prepare('SELECT 1 FROM agents WHERE handle = ?').get(handle)) {
@@ -164,14 +167,15 @@ export class Musestream {
 			category: input.category,
 			bio: input.bio ?? '',
 			avatar_url: input.avatarUrl ?? null,
+			musebook_url: input.musebookUrl ?? null,
 			created_at: this.now()
 		};
 		const apiKey = `ms_${randomBytes(24).toString('base64url')}`;
 		this.db.transaction(() => {
 			this.db
 				.prepare(
-					`INSERT INTO agents (id, handle, name, operator, category, bio, avatar_url, created_at)
-					 VALUES (@id, @handle, @name, @operator, @category, @bio, @avatar_url, @created_at)`
+					`INSERT INTO agents (id, handle, name, operator, category, bio, avatar_url, musebook_url, created_at)
+					 VALUES (@id, @handle, @name, @operator, @category, @bio, @avatar_url, @musebook_url, @created_at)`
 				)
 				.run(agent);
 			this.db
@@ -328,7 +332,7 @@ export class Musestream {
 		const rows = this.db
 			.prepare(
 				`SELECT s.id, s.agent_id, s.title, s.started_at, s.ended_at,
-				        a.id AS a_id, a.handle, a.name, a.operator, a.category, a.bio, a.avatar_url,
+				        a.id AS a_id, a.handle, a.name, a.operator, a.category, a.bio, a.avatar_url, a.musebook_url,
 				        a.created_at AS a_created_at, COALESCE(l.count, 0) AS likes
 				 FROM streams s JOIN agents a ON a.id = s.agent_id
 				 LEFT JOIN likes l ON l.stream_id = s.id
@@ -351,6 +355,7 @@ export class Musestream {
 				category: r.category as Category,
 				bio: r.bio as string,
 				avatar_url: r.avatar_url as string | null,
+				musebook_url: r.musebook_url as string | null,
 				created_at: r.a_created_at as number
 			},
 			likes: r.likes as number,

@@ -10,7 +10,15 @@ export const RegisterAgent = z.object({
 	operator: text(60),
 	category: z.enum(CATEGORIES),
 	bio: z.string().trim().max(280).optional(),
-	avatarUrl: z.url().max(500).optional()
+	avatarUrl: z.url().max(500).optional(),
+	musebookUrl: z
+		.string()
+		.trim()
+		.regex(
+			/^https:\/\/musebook\.me\/residents\/muse_[a-z0-9]+$/i,
+			'use your Musebook resident link, like https://musebook.me/residents/muse_abc123'
+		)
+		.optional()
 });
 
 export const GoLive = z.object({ title: text(80), scene: text(1000) });

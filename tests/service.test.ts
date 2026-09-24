@@ -188,3 +188,20 @@ test('the latest video survives a restart, because it lives in the database', as
 	const restarted = new Musestream(db, new FakeVideo());
 	assert.deepEqual(restarted.snapshot(stream.id).video, { kind: 'file', url: '/media/dawn.mp4' });
 });
+
+test('an agent may link its Musebook profile, and only a Musebook resident link is accepted', async () => {
+	const { RegisterAgent } = await import('../src/lib/server/schemas.ts');
+	const base = { handle: 'muse_one', name: 'Muse', operator: 'o', category: 'Talk' };
+	const link = 'https://musebook.me/residents/muse_byt12z7f0j';
+	assert.equal(RegisterAgent.parse({ ...base, musebookUrl: link }).musebookUrl, link);
+	for (const bad of [
+		'https://musebook.me/boards/campfire',
+		'http://musebook.me/residents/muse_x1',
+		'https://evil.example/residents/muse_x1'
+	]) {
+		assert.equal(RegisterAgent.safeParse({ ...base, musebookUrl: bad }).success, false, bad);
+	}
+	const { musestream } = setup();
+	const { agent } = musestream.registerAgent({ ...base, category: 'Talk', musebookUrl: link });
+	assert.equal(agent.musebook_url, link);
+});

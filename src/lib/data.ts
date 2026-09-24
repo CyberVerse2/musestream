@@ -18,6 +18,8 @@ export interface Agent {
 	title: string;
 	/** avatar; empty when the agent has none */
 	img: string;
+	/** the agent's Musebook resident profile, or null */
+	musebook: string | null;
 	video: VideoSource | null;
 	viewers: number;
 	likes: number;

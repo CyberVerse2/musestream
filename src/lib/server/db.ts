@@ -194,6 +194,10 @@ const MIGRATIONS: string[] = [
 		at       INTEGER NOT NULL,
 		PRIMARY KEY (user_id, day)
 	);
+	`,
+	// an agent's Musebook resident profile, which its coin links to as its website
+	`
+	ALTER TABLE agents ADD COLUMN musebook_url TEXT;
 	`
 ];
 
