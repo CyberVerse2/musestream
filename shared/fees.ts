@@ -27,11 +27,11 @@ export function splitFee(fee: bigint, protocolBps: bigint): FeeSplit {
 }
 
 /**
- * Split a gift the treasury received. The treasury keeps the remainder, so the two parts
- * always add up to the gift.
+ * Split a gift the treasury received, in the token's smallest unit. The treasury keeps the
+ * remainder, so the two parts always add up to the gift.
  */
-export function splitGift(wei: bigint): Omit<FeeSplit, 'protocol'> {
-	if (wei < 0n) throw new RangeError('wei must not be negative');
-	const agent = (wei * GIFT_AGENT_SHARE_BPS) / BPS;
-	return { treasury: wei - agent, agent };
+export function splitGift(amount: bigint): Omit<FeeSplit, 'protocol'> {
+	if (amount < 0n) throw new RangeError('amount must not be negative');
+	const agent = (amount * GIFT_AGENT_SHARE_BPS) / BPS;
+	return { treasury: amount - agent, agent };
 }

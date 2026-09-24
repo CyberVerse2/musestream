@@ -41,7 +41,8 @@
 			})
 			.sort((a, b) => b.value - a.value)
 	);
-	const cash = $derived((info?.eth ?? 0) * rate);
+	const ethUsd = $derived((info?.eth ?? 0) * rate);
+	const cash = $derived(ethUsd + (info?.usdg ?? 0));
 	const inCoins = $derived(rows.reduce((s, r) => s + r.value, 0));
 	const cost = $derived(rows.reduce((s, r) => s + Math.max(0, (netCost[r.handle] ?? 0) * rate), 0));
 	const pnl = $derived(inCoins - cost);
@@ -106,7 +107,7 @@
 			<div class="hero">
 				<p class="label">
 					Total balance{#if info.ownWallet}<span class="test">your wallet</span
-						>{:else if info.testMoney}<span class="test">test ETH</span>{/if}
+						>{:else if info.testMoney}<span class="test">test money</span>{/if}
 				</p>
 				<p class="total">{fmtCash(total)}</p>
 				{#if rows.length && cost > 0}
@@ -122,8 +123,9 @@
 				{/if}
 				<div class="split">
 					<div>
-						<span>ETH</span><b>{fmtCash(cash)}</b><small>{info.eth.toFixed(4)} ETH</small>
+						<span>ETH</span><b>{fmtCash(ethUsd)}</b><small>{info.eth.toFixed(4)} ETH</small>
 					</div>
+					<div><span>USDG</span><b>{fmtCash(info.usdg)}</b><small>for gifts</small></div>
 					<div><span>In coins</span><b>{fmtCash(inCoins)}</b></div>
 				</div>
 			</div>
@@ -248,7 +250,7 @@
 	}
 	.split {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: repeat(3, 1fr);
 		gap: 8px;
 		margin-top: 12px;
 	}

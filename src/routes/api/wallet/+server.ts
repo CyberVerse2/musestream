@@ -6,15 +6,17 @@ import { publicCoin } from '$lib/server/market';
 import { viewerWallet } from '$lib/server/viewer';
 import { linkedAddress } from '$lib/server/session';
 import type { AgentRow } from '$lib/server/service';
+import { usdgToUsd } from '$shared/usdg';
 
-/** The viewer's wallet: ETH, coins held, and their trades. */
+/** The viewer's wallet: ETH, USDG for gifts, coins held, and their trades. */
 export const GET = (event) =>
 	handle(async () => {
 		// a signed-in viewer's own wallet, or the server-held test wallet
 		const own = linkedAddress(event.locals.viewer);
 		const address = own ?? (await viewerWallet(event.locals.viewer)).address;
-		const [wei, held, usd] = await Promise.all([
+		const [wei, usdg, held, usd] = await Promise.all([
 			coins!.balance(address),
+			coins!.usdgBalance(address),
 			coins!.holdings(address),
 			ethPrice.usd()
 		]);
@@ -38,6 +40,7 @@ export const GET = (event) =>
 			testMoney: coins!.testMoney,
 			ethUsd: usd,
 			eth: Number(formatEther(wei)),
+			usdg: usdgToUsd(usdg),
 			holdings,
 			activity: coins!.tradesBy(address, 30).map((t) => ({
 				side: t.side,

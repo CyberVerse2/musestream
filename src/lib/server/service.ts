@@ -469,19 +469,19 @@ export class Musestream {
 	}
 
 	/**
-	 * Records a gift. With `payment`, the treasury received `wei` in `tx` and owes the agent
-	 * its share; without it, the gift is unpaid.
+	 * Records a gift. With `payment`, the treasury received `amount` USDG units in `tx` and owes
+	 * the agent its share; without it, the gift is unpaid.
 	 */
 	gift(
 		streamId: string,
 		viewer: string,
 		gift: GiftId,
-		payment: { tx: string; wei: bigint } | null = null
+		payment: { tx: string; amount: bigint } | null = null
 	): ChatRow {
 		this.requireLiveStream(streamId);
 		this.db
 			.prepare(
-				`INSERT INTO gifts (stream_id, viewer, gift, usd_cents, status, tx, wei, agent_wei, created_at)
+				`INSERT INTO gifts (stream_id, viewer, gift, usd_cents, status, tx, amount, agent_amount, created_at)
 				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			)
 			.run(
@@ -491,8 +491,8 @@ export class Musestream {
 				GIFTS[gift],
 				payment ? 'paid' : 'unpaid',
 				payment?.tx ?? null,
-				payment?.wei.toString() ?? null,
-				payment ? splitGift(payment.wei).agent.toString() : null,
+				payment?.amount.toString() ?? null,
+				payment ? splitGift(payment.amount).agent.toString() : null,
 				this.now()
 			);
 		return this.addChat(streamId, viewer, 'gift', gift);

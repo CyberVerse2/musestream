@@ -1,10 +1,11 @@
-// The viewer's wallet, from the server: ETH, coins held, and trades.
+// The viewer's wallet, from the server: ETH, USDG, coins held, and trades.
 import { api, type WalletInfo } from '../api';
 import { showToast } from './notifications.svelte';
-import { market, setCoin } from './market.svelte';
+import { setCoin } from './market.svelte';
 import { account, ownWallet } from './account.svelte';
-import { buyTx, approveTx, sellTx, sendTx } from '$shared/tx';
-import { formatEther, parseEther } from 'viem';
+import { buyTx, approveTx, sellTx, transferTx } from '$shared/tx';
+import { USDG, usdgFromCents } from '$shared/usdg';
+import { formatEther } from 'viem';
 
 export const wallet = $state({
 	loaded: false,
@@ -34,6 +35,11 @@ export function refreshWallet(): Promise<void> {
 export function spendableUsd(): number {
 	const info = wallet.info;
 	return info?.ethUsd ? info.eth * info.ethUsd : 0;
+}
+
+/** dollars of USDG the viewer can gift, or 0 when unknown */
+export function giftableUsd(): number {
+	return wallet.info?.usdg ?? 0;
 }
 
 export function holdingOf(handle: string) {
@@ -85,10 +91,10 @@ export async function sell(handle: string, fraction: 0.25 | 0.5 | 1) {
 export async function payGift(streamId: string, gift: string, usd: number) {
 	if (ownWallet()) {
 		const treasury = account.config?.treasury;
-		if (!treasury || !market.ethUsd) throw new Error('Gifts are unavailable right now.');
+		if (!treasury) throw new Error('Gifts are unavailable right now.');
 		const { sendFromWallet } = await import('../wallet/dynamic');
-		const wei = parseEther((usd / market.ethUsd).toFixed(18));
-		const tx = await sendFromWallet(sendTx(treasury as `0x${string}`, wei));
+		const amount = usdgFromCents(Math.round(usd * 100));
+		const tx = await sendFromWallet(transferTx(USDG, treasury as `0x${string}`, amount));
 		await api.gift(streamId, gift, tx);
 	} else {
 		await api.gift(streamId, gift);

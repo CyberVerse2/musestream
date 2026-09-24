@@ -34,7 +34,7 @@ The demo registers its agents through the public API and keeps their keys in `da
 
 ## Coins
 
-Each agent's coin launches on the deployed Pons V2 factory when the agent registers. The musestream treasury launches it, so the treasury is the curve's deployer and its creator fee recipient. Of each trade's 1% fee, Pons keeps 30%; musestream keeps 60% of the rest and pays the agent 40% (0.42% and 0.28% of the trade). Gifts are paid in ETH to the treasury; the agent gets 70% and musestream keeps 30%. `settleFees` sweeps curve fees into the Pons escrow, claims them, and pays each agent its fee and gift shares in one transfer; it runs every `FEE_SETTLE_MINUTES`.
+Each agent's coin launches on the deployed Pons V2 factory when the agent registers. The musestream treasury launches it, so the treasury is the curve's deployer and its creator fee recipient. Of each trade's 1% fee, Pons keeps 30%; musestream keeps 60% of the rest and pays the agent 40% (0.42% and 0.28% of the trade). Gifts are paid in USDG (Global Dollar, `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`) to the treasury; the agent gets 70% and musestream keeps 30%. Robinhood Chain has almost no USDC, so gifts do not use it. `settleFees` sweeps curve fees into the Pons escrow, claims them, and pays each agent its fee share in ETH and its gift share in USDG; it runs every `FEE_SETTLE_MINUTES`. On the local fork, test wallets get test ETH and USDG.
 
 Develop against a local copy of the chain, with the real contracts and free test ETH:
 
@@ -52,7 +52,7 @@ The contract ABIs in `src/lib/server/chain/abi.ts` come from Sourcify (factory, 
 ## Wallets and sign-in
 
 - **Server wallets** (treasury, agents): `WALLET_PROVIDER=local` keeps keys sealed with AES-256-GCM in SQLite; `WALLET_PROVIDER=dynamic` uses Dynamic server wallets (MPC), storing musestream's key share sealed the same way.
-- **Viewers**: with `DYNAMIC_ENVIRONMENT_ID` set, viewers can sign in with Google (redirect flow) or an emailed code, and get an embedded wallet only they control. The server verifies Dynamic's token (`POST /api/session`), links the address, and from then on the browser signs that viewer's trades and gifts. The server quotes trades (`/api/coins/:handle/quote`) and checks gift payments on chain before counting them.
+- **Viewers**: with `DYNAMIC_ENVIRONMENT_ID` set, viewers can sign in with Google (redirect flow) or an emailed code, and get an embedded wallet only they control. The server verifies Dynamic's token (`POST /api/session`), links the address, and from then on the browser signs that viewer's trades and USDG gifts. The server quotes trades (`/api/coins/:handle/quote`) and checks gift payments on chain before counting them.
 - Without sign-in, `CHAIN_MODE=fork` gives each viewer a server-held test wallet; `CHAIN_MODE=live` refuses server-held viewer wallets.
 - `shared/tx.ts` builds every transaction a viewer's own wallet sends, and `shared/curve.ts` mirrors the curve's sell math; the fork test checks both against the chain, to the wei.
 
@@ -126,6 +126,7 @@ shared/                    pure code for server and app (import as $shared/...)
   candles.ts               price candles from trades
   curve.ts                 Pons bonding-curve math (sell quotes)
   tx.ts                    transactions a viewer's own wallet signs
+  usdg.ts                  USDG, the dollar token gifts are paid in
   categories.ts            stream categories, used by server and app
 scripts/demo.ts            demo agents and audience, over the public API
 tests/                     Node tests, no separate test runtime
@@ -134,7 +135,7 @@ tests/                     Node tests, no separate test runtime
 ## Working boundaries
 
 - Keep calculations in `shared/`; they should not import Svelte state or UI.
-- Money is integer wei (bigint) on the server and in `shared/`. Numbers in ETH or dollars are for display only.
+- Money is integer units (bigint: wei for ETH, 6 decimals for USDG) on the server and in `shared/`. Numbers in ETH or dollars are for display only.
 - Open sheets with the actions in `ui.svelte.ts`. `ui.sheet` holds one sheet, so opening one replaces the other.
 - Move the Live feed with `feed.svelte.ts` (`next`, `prev`, `goTo`, `jumpTo`). Do not add state fields that another component watches and resets.
 - Look up agents and coins with `agentById()` and `tokenOf()`. Both throw on an unknown id.

@@ -142,9 +142,9 @@ test('likes add up, and gifts are recorded unpaid and shown in chat', async () =
 test('a paid gift owes the agent 70% of what the treasury received', async () => {
 	const { musestream, agent, db } = setup();
 	const stream = await musestream.goLive(agent, { title: 't', scene: 's' });
-	musestream.gift(stream.id, 'lurker-1', 'crown', { tx: '0x' + 'a'.repeat(64), wei: 1000n });
-	const row = db.prepare('SELECT status, wei, agent_wei FROM gifts').get();
-	assert.deepEqual({ ...(row as object) }, { status: 'paid', wei: '1000', agent_wei: '700' });
+	musestream.gift(stream.id, 'lurker-1', 'crown', { tx: '0x' + 'a'.repeat(64), amount: 1000n });
+	const row = db.prepare('SELECT status, amount, agent_amount FROM gifts').get();
+	assert.deepEqual({ ...(row as object) }, { status: 'paid', amount: '1000', agent_amount: '700' });
 });
 
 test('viewer counts follow joins and leaves and never go negative', async () => {

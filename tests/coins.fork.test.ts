@@ -10,6 +10,7 @@ import { robinhood } from 'viem/chains';
 import { openDb } from '../src/lib/server/db.ts';
 import { Musestream } from '../src/lib/server/service.ts';
 import { Coins } from '../src/lib/server/chain/coins.ts';
+import { usdgFromCents } from '../shared/usdg.ts';
 import { LocalWallets, Sealer, Wallets } from '../src/lib/server/chain/wallets.ts';
 import type { VideoProvider } from '../src/lib/server/video/provider.ts';
 
@@ -71,16 +72,22 @@ test(
 		assert.deepEqual(trades.map((t) => t.side).sort(), ['buy', 'sell']);
 		assert.equal(coins.view(agent.id)!.holders, 1);
 
-		const fees = coins.earnings(agent.id).unpaid;
+		const fees = coins.earnings(agent.id).eth.unpaid;
 		assert.ok(fees > 0n, 'trades owe the agent part of the fee');
 
+		// a $25 gift in USDG, checked on chain as a viewer's own wallet would have sent it
 		const stream = await musestream.goLive(agent, { title: 't', scene: 's' });
 		const treasury = await coins.treasury();
-		const giftWei = parseEther('0.01');
-		const giftTx = await coins.send(viewer, treasury.address, giftWei);
-		musestream.gift(stream.id, viewer.owner_id, 'crown', { tx: giftTx, wei: giftWei });
-		const owed = coins.earnings(agent.id);
-		assert.equal(owed.unpaid, fees + (giftWei * 7n) / 10n, 'a gift owes the agent 70%');
+		const gift = usdgFromCents(2500);
+		await coins.topUpUsdg(viewer.address, gift);
+		const giftTx = await coins.sendUsdg(viewer, treasury.address, gift);
+		await coins.verifyUsdgPayment(giftTx, viewer.address, treasury.address, gift);
+		await assert.rejects(
+			coins.verifyUsdgPayment(giftTx, viewer.address, treasury.address, gift + 1n),
+			/does not pay/
+		);
+		musestream.gift(stream.id, viewer.owner_id, 'crown', { tx: giftTx, amount: gift });
+		assert.equal(coins.earnings(agent.id).usdg.unpaid, 17_500_000n, 'a gift owes the agent 70%');
 
 		const result = await coins.settleFees();
 		assert.ok(result.swept >= 1, 'fees moved from the curve to the escrow');
@@ -88,10 +95,16 @@ test(
 		const agentWallet = wallets.find('agent', agent.id)!;
 		assert.equal(
 			await coins.balance(agentWallet.address),
-			owed.unpaid,
-			'the agent got exactly what it was owed'
+			fees,
+			'the agent got its fee share in ETH'
 		);
-		assert.equal(coins.earnings(agent.id).unpaid, 0n);
+		assert.equal(
+			await coins.usdgBalance(agentWallet.address),
+			17_500_000n,
+			'the agent got its gift share in USDG'
+		);
+		const after = coins.earnings(agent.id);
+		assert.equal(after.eth.unpaid + after.usdg.unpaid, 0n);
 	}
 );
 

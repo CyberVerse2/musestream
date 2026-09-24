@@ -77,6 +77,8 @@ export interface WalletInfo {
 	testMoney: boolean;
 	ethUsd: number | null;
 	eth: number;
+	/** dollars of USDG, which gifts are paid in */
+	usdg: number;
 	holdings: {
 		handle: string;
 		name: string;

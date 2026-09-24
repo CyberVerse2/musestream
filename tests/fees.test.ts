@@ -27,9 +27,9 @@ test('a gift splits 70% agent, 30% treasury', () => {
 	const s = splitGift(10n ** 18n);
 	assert.equal(s.agent, 7n * 10n ** 17n);
 	assert.equal(s.treasury, 3n * 10n ** 17n);
-	for (const wei of [0n, 1n, 7n, 999n, 10n ** 18n + 3n]) {
-		const r = splitGift(wei);
-		assert.equal(r.agent + r.treasury, wei);
+	for (const amount of [0n, 1n, 7n, 999n, 10n ** 18n + 3n]) {
+		const r = splitGift(amount);
+		assert.equal(r.agent + r.treasury, amount);
 	}
 	assert.throws(() => splitGift(-1n), RangeError);
 });

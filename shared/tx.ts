@@ -33,13 +33,23 @@ const curveTrade = [
 	}
 ] as const;
 
-const erc20Approve = [
+const erc20 = [
 	{
 		type: 'function',
 		name: 'approve',
 		stateMutability: 'nonpayable',
 		inputs: [
 			{ name: 'spender', type: 'address' },
+			{ name: 'amount', type: 'uint256' }
+		],
+		outputs: [{ type: 'bool' }]
+	},
+	{
+		type: 'function',
+		name: 'transfer',
+		stateMutability: 'nonpayable',
+		inputs: [
+			{ name: 'to', type: 'address' },
 			{ name: 'amount', type: 'uint256' }
 		],
 		outputs: [{ type: 'bool' }]
@@ -68,7 +78,7 @@ export function buyTx(
 export function approveTx(token: Address, curve: Address, tokens: bigint): TxRequest {
 	return {
 		to: token,
-		data: encodeFunctionData({ abi: erc20Approve, functionName: 'approve', args: [curve, tokens] })
+		data: encodeFunctionData({ abi: erc20, functionName: 'approve', args: [curve, tokens] })
 	};
 }
 
@@ -89,7 +99,10 @@ export function sellTx(
 	};
 }
 
-/** plain ETH transfer, e.g. a gift to the treasury */
-export function sendTx(to: Address, wei: bigint): TxRequest {
-	return { to, value: wei };
+/** send `amount` of an ERC-20 token, e.g. a USDG gift to the treasury */
+export function transferTx(token: Address, to: Address, amount: bigint): TxRequest {
+	return {
+		to: token,
+		data: encodeFunctionData({ abi: erc20, functionName: 'transfer', args: [to, amount] })
+	};
 }

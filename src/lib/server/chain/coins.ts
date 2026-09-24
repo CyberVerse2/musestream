@@ -2,18 +2,22 @@
 //
 // The musestream treasury launches every coin. That makes it the curve's deployer, so it may
 // sweep fees, and it is the creator fee recipient, so fees land in its escrow balance.
-// musestream then owes each agent 40% of the creator share, and 70% of the gifts it receives,
-// and pays both out in `settleFees`.
+// musestream then owes each agent 40% of the creator share, in ETH, and 70% of the USDG gifts it
+// receives, and pays both out in `settleFees`.
 import { randomBytes } from 'node:crypto';
 import {
 	BaseError,
 	ContractFunctionRevertedError,
 	createWalletClient,
 	decodeEventLog,
+	encodeAbiParameters,
 	erc20Abi,
 	formatEther,
 	http,
+	keccak256,
+	pad,
 	parseEventLogs,
+	toHex,
 	type Address,
 	type Hash,
 	type PublicClient,
@@ -22,6 +26,8 @@ import {
 } from 'viem';
 import { splitFee } from '../../../../shared/fees.ts';
 import { sellQuote, withSlippage } from '../../../../shared/curve.ts';
+import { USDG } from '../../../../shared/usdg.ts';
+import { transferTx } from '../../../../shared/tx.ts';
 import type { DB } from '../db.ts';
 import type { Hub } from '../hub.ts';
 import type { AgentRow } from '../service.ts';
@@ -39,6 +45,9 @@ import type { Wallets, WalletRow } from './wallets.ts';
 export const TOKEN_SUPPLY = 10n ** 27n; // 1B tokens, 18 decimals
 /** agents are paid once their unpaid share passes this, so gas does not eat it */
 const PAYOUT_MIN_WEI = 10n ** 14n; // 0.0001 ETH
+const PAYOUT_MIN_USDG = 100_000n; // $0.10
+/** where USDG keeps balances: `mapping(address => uint256)` at storage slot 1 */
+const USDG_BALANCE_SLOT = 1n;
 
 export interface CoinRow {
 	agent_id: string;
@@ -52,6 +61,14 @@ export interface CoinRow {
 	graduated: number;
 	error: string | null;
 	created_at: number;
+}
+
+/** what one agent is owed from one source, not yet paid */
+interface Owed {
+	source: 'fees' | 'gifts';
+	agentId: string;
+	ids: number[];
+	amount: bigint;
 }
 
 export interface TradeRow {
@@ -153,6 +170,19 @@ export class Coins {
 		await this.o.client.request({
 			method: 'anvil_setBalance' as never,
 			params: [address, `0x${atLeast.toString(16)}`] as never
+		});
+	}
+
+	/** development only: give a wallet test USDG on the local fork, by writing its balance */
+	async topUpUsdg(address: Address, atLeast: bigint) {
+		if (!this.o.devFork) return;
+		if ((await this.usdgBalance(address)) >= atLeast) return;
+		const slot = keccak256(
+			encodeAbiParameters([{ type: 'address' }, { type: 'uint256' }], [address, USDG_BALANCE_SLOT])
+		);
+		await this.o.client.request({
+			method: 'anvil_setStorageAt' as never,
+			params: [USDG, slot, pad(toHex(atLeast))] as never
 		});
 	}
 
@@ -593,25 +623,48 @@ export class Coins {
 	}
 
 	/**
-	 * Check a payment a viewer's own wallet sent: it succeeded, came from `from`, went to
-	 * `to`, and carried at least `minWei`. Returns the amount it carried.
+	 * Check a USDG payment a viewer's own wallet sent: it succeeded and moved at least `amount`
+	 * USDG from `from` to `to`.
 	 */
-	async verifyPayment(tx: Hash, from: Address, to: Address, minWei: bigint): Promise<bigint> {
-		const [t, receipt] = await Promise.all([
-			this.o.client.getTransaction({ hash: tx }),
-			this.o.client.waitForTransactionReceipt({ hash: tx, timeout: 30_000 })
-		]);
-		const ok =
-			receipt.status === 'success' &&
-			t.from.toLowerCase() === from.toLowerCase() &&
-			t.to?.toLowerCase() === to.toLowerCase() &&
-			t.value >= minWei;
-		if (!ok)
+	async verifyUsdgPayment(tx: Hash, from: Address, to: Address, amount: bigint) {
+		const receipt = await this.o.client.waitForTransactionReceipt({ hash: tx, timeout: 30_000 });
+		const paid = parseEventLogs({ abi: erc20Abi, eventName: 'Transfer', logs: receipt.logs })
+			.filter(
+				(l) =>
+					l.address.toLowerCase() === USDG.toLowerCase() &&
+					l.args.from.toLowerCase() === from.toLowerCase() &&
+					l.args.to.toLowerCase() === to.toLowerCase()
+			)
+			.reduce((sum, l) => sum + l.args.value, 0n);
+		if (receipt.status !== 'success' || paid < amount)
 			throw new MusestreamError(400, 'bad_payment', 'That transaction does not pay for this gift.');
-		return t.value;
 	}
 
-	/** move ETH, e.g. a gift from a viewer to the treasury */
+	/** move USDG, e.g. a gift from a viewer's test wallet to the treasury */
+	sendUsdg(from: WalletRow, to: Address, amount: bigint): Promise<Hash> {
+		return this.serial(from.address, () => this.sendUsdgNow(from, to, amount));
+	}
+	private async sendUsdgNow(from: WalletRow, to: Address, amount: bigint): Promise<Hash> {
+		const signer = await this.signer(from);
+		const hash = await signer.sendTransaction({
+			...transferTx(USDG, to, amount),
+			chain: this.o.client.chain,
+			account: signer.account
+		});
+		await this.confirm(hash);
+		return hash;
+	}
+
+	usdgBalance(address: Address): Promise<bigint> {
+		return this.o.client.readContract({
+			address: USDG,
+			abi: erc20Abi,
+			functionName: 'balanceOf',
+			args: [address]
+		});
+	}
+
+	/** move ETH, e.g. an agent's fee payout */
 	send(from: WalletRow, to: Address, wei: bigint): Promise<Hash> {
 		return this.serial(from.address, () => this.sendNow(from, to, wei));
 	}
@@ -758,8 +811,8 @@ export class Coins {
 
 	/**
 	 * Move fees out of every curve into the escrow, claim the treasury's balance, and pay
-	 * each agent what it is owed from fees and gifts, in one transfer. Returns what happened,
-	 * for logs.
+	 * each agent what it is owed: its fee share in ETH and its gift share in USDG. Returns what
+	 * happened, for logs.
 	 */
 	async settleFees() {
 		const treasury = await this.treasury();
@@ -813,46 +866,44 @@ export class Coins {
 			});
 			await this.confirm(hash);
 		}
-		const owed = new Map<string, { fees: number[]; gifts: number[]; wei: bigint }>();
+		// fee shares are paid in ETH and gift shares in USDG, one transfer each per agent
+		const owed = new Map<string, Owed>();
 		for (const r of this.shares()) {
 			if (r.paid_at) continue;
-			const o = owed.get(r.agent_id) ?? { fees: [], gifts: [], wei: 0n };
-			o[r.source].push(r.id);
-			o.wei += BigInt(r.agent_wei);
-			owed.set(r.agent_id, o);
+			const key = `${r.source}:${r.agent_id}`;
+			const o = owed.get(key) ?? { source: r.source, agentId: r.agent_id, ids: [], amount: 0n };
+			o.ids.push(r.id);
+			o.amount += BigInt(r.agent_amount);
+			owed.set(key, o);
 		}
-		const paid: { agentId: string; wei: bigint; tx: Hash }[] = [];
-		for (const [agentId, o] of owed) {
-			if (o.wei < PAYOUT_MIN_WEI) continue;
-			const agentWallet = await this.o.wallets.ensure('agent', agentId);
-			const tx = await this.sendNow(treasury, agentWallet.address, o.wei);
-			const at = this.o.now();
-			const markPaid = (table: 'fee_ledger' | 'gifts', atColumn: string, ids: number[]) => {
-				if (!ids.length) return;
-				this.o.db
-					.prepare(
-						`UPDATE ${table} SET payout_tx = ?, ${atColumn} = ? WHERE id IN (${ids.map(() => '?').join(',')})`
-					)
-					.run(tx, at, ...ids);
-			};
-			this.o.db.transaction(() => {
-				markPaid('fee_ledger', 'paid_at', o.fees);
-				markPaid('gifts', 'payout_at', o.gifts);
-			})();
-			paid.push({ agentId, wei: o.wei, tx });
+		const paid: { agentId: string; asset: 'ETH' | 'USDG'; amount: bigint; tx: Hash }[] = [];
+		for (const o of owed.values()) {
+			const fees = o.source === 'fees';
+			if (o.amount < (fees ? PAYOUT_MIN_WEI : PAYOUT_MIN_USDG)) continue;
+			const agentWallet = await this.o.wallets.ensure('agent', o.agentId);
+			const tx = fees
+				? await this.sendNow(treasury, agentWallet.address, o.amount)
+				: await this.sendUsdgNow(treasury, agentWallet.address, o.amount);
+			const [table, atColumn] = fees ? ['fee_ledger', 'paid_at'] : ['gifts', 'payout_at'];
+			this.o.db
+				.prepare(
+					`UPDATE ${table} SET payout_tx = ?, ${atColumn} = ? WHERE id IN (${o.ids.map(() => '?').join(',')})`
+				)
+				.run(tx, this.o.now(), ...o.ids);
+			paid.push({ agentId: o.agentId, asset: fees ? 'ETH' : 'USDG', amount: o.amount, tx });
 		}
 		return { swept, claimedWei: claimable, paid };
 	}
 
-	/** what an agent has earned from trade fees and gifts, paid and unpaid, in wei */
+	/** what an agent has earned, paid and unpaid: trade fees in wei, gifts in USDG units */
 	earnings(agentId: string) {
-		let paid = 0n;
-		let unpaid = 0n;
+		const out = { eth: { paid: 0n, unpaid: 0n }, usdg: { paid: 0n, unpaid: 0n } };
 		for (const r of this.shares(agentId)) {
-			if (r.paid_at) paid += BigInt(r.agent_wei);
-			else unpaid += BigInt(r.agent_wei);
+			const bucket = r.source === 'fees' ? out.eth : out.usdg;
+			if (r.paid_at) bucket.paid += BigInt(r.agent_amount);
+			else bucket.unpaid += BigInt(r.agent_amount);
 		}
-		return { paid, unpaid };
+		return out;
 	}
 
 	/** the agent's share of every trade fee and paid gift, for one agent or all of them */
@@ -860,18 +911,18 @@ export class Coins {
 		return this.o.db
 			.prepare(
 				`SELECT * FROM (
-				   SELECT 'fees' AS source, id, agent_id, agent_wei, paid_at FROM fee_ledger
+				   SELECT 'fees' AS source, id, agent_id, agent_wei AS agent_amount, paid_at FROM fee_ledger
 				   UNION ALL
-				   SELECT 'gifts', g.id, s.agent_id, g.agent_wei, g.payout_at
+				   SELECT 'gifts', g.id, s.agent_id, g.agent_amount, g.payout_at
 				   FROM gifts g JOIN streams s ON s.id = g.stream_id
-				   WHERE g.agent_wei IS NOT NULL
+				   WHERE g.agent_amount IS NOT NULL
 				 ) WHERE @agent IS NULL OR agent_id = @agent`
 			)
 			.all({ agent: agentId }) as {
 			source: 'fees' | 'gifts';
 			id: number;
 			agent_id: string;
-			agent_wei: string;
+			agent_amount: string;
 			paid_at: number | null;
 		}[];
 	}
