@@ -6,6 +6,24 @@
 			"runtimeExecutable": "npm",
 			"runtimeArgs": ["run", "dev", "--", "--port", "5173", "--strictPort"],
 			"port": 5173
+		},
+		{
+			"name": "countdown-preview",
+			"runtimeExecutable": "env",
+			"runtimeArgs": [
+				"CHAIN_MODE=fork",
+				"CHAIN_RPC_URL=http://127.0.0.1:1",
+				"WALLET_PROVIDER=local",
+				"DYNAMIC_ENVIRONMENT_ID=",
+				"DYNAMIC_API_TOKEN=",
+				"VIDEO_PROVIDER=mock",
+				"VIDEO_CLIPS=",
+				"MUSESTREAM_DATA_DIR=/private/tmp/claude-501/-Users-thecyberverse-Code-lurkk/0791416e-f1bb-4dc1-b82f-32a539dc0420/scratchpad/preview-data",
+				"LAUNCH_AT=2026-09-24T23:40:00Z",
+				"LAUNCH_HOSTS=localhost",
+				"npm", "run", "dev", "--", "--port", "5180", "--strictPort"
+			],
+			"port": 5180
 		}
 	]
 }

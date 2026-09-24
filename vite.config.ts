@@ -11,7 +11,6 @@ export default defineConfig({
 	optimizeDeps: {
 		include: [
 			'viem',
-			'hls.js',
 			'@dynamic-labs-sdk/client',
 			'@dynamic-labs-sdk/evm',
 			'@dynamic-labs-sdk/evm/viem',

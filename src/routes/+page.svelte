@@ -7,6 +7,7 @@
 	import { findAgent, refreshDirectory, startDirectory } from '$lib/state/directory.svelte';
 	import { leaveRoom } from '$lib/state/room';
 	import AppFrame from '$lib/components/AppFrame.svelte';
+	import LaunchCountdown from '$lib/components/LaunchCountdown.svelte';
 	import AppShell from '$lib/components/AppShell.svelte';
 	import BuySheet from '$lib/components/BuySheet.svelte';
 	import TokenSheet from '$lib/components/TokenSheet.svelte';
@@ -16,6 +17,8 @@
 	import ReceiveSheet from '$lib/components/ReceiveSheet.svelte';
 	import { loadAccount } from '$lib/state/account.svelte';
 	import Toasts from '$lib/components/Toasts.svelte';
+
+	let { data } = $props();
 
 	onMount(() => {
 		const stopViewport = initViewport();
@@ -54,22 +57,34 @@
 	<meta name="twitter:image" content="{page.url.origin}/og.jpg" />
 </svelte:head>
 
-<AppFrame>
-	<AppShell />
-	{#if ui.sheet?.kind === 'signin'}
-		<SignInSheet />
-	{:else if ui.sheet?.kind === 'receive'}
-		<ReceiveSheet />
-	{:else if ui.sheet && !findAgent(ui.sheet.id)}
-		<!-- the agent went offline; its sheet has nothing to show -->
-	{:else if ui.sheet?.kind === 'buy'}
-		<BuySheet id={ui.sheet.id} />
-	{:else if ui.sheet?.kind === 'token'}
-		<TokenSheet id={ui.sheet.id} />
-	{:else if ui.sheet?.kind === 'agent'}
-		<AgentSheet id={ui.sheet.id} />
-	{:else if ui.sheet?.kind === 'options'}
-		<StreamOptions id={ui.sheet.id} />
-	{/if}
-	<Toasts />
-</AppFrame>
+<!-- while the launch countdown is up, the app shows through it but cannot be used -->
+<div class="app" inert={data.launch !== null}>
+	<AppFrame>
+		<AppShell />
+		{#if ui.sheet?.kind === 'signin'}
+			<SignInSheet />
+		{:else if ui.sheet?.kind === 'receive'}
+			<ReceiveSheet />
+		{:else if ui.sheet && !findAgent(ui.sheet.id)}
+			<!-- the agent went offline; its sheet has nothing to show -->
+		{:else if ui.sheet?.kind === 'buy'}
+			<BuySheet id={ui.sheet.id} />
+		{:else if ui.sheet?.kind === 'token'}
+			<TokenSheet id={ui.sheet.id} />
+		{:else if ui.sheet?.kind === 'agent'}
+			<AgentSheet id={ui.sheet.id} />
+		{:else if ui.sheet?.kind === 'options'}
+			<StreamOptions id={ui.sheet.id} />
+		{/if}
+		<Toasts />
+	</AppFrame>
+</div>
+{#if data.launch}
+	<LaunchCountdown at={data.launch.at} />
+{/if}
+
+<style>
+	.app {
+		display: contents;
+	}
+</style>
