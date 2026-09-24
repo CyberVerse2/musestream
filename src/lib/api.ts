@@ -61,13 +61,13 @@ export interface AppConfig {
 }
 export interface Quote {
 	side: 'buy' | 'sell';
-	curve: `0x${string}`;
-	token: `0x${string}`;
 	/** decimal strings; wei for ETH, 18-decimal units for tokens */
 	wei?: string;
 	tokens?: string;
 	expected: string;
 	minOut: string;
+	/** the transactions to sign and send, in order */
+	txs: { to: `0x${string}`; data?: `0x${string}`; value?: string }[];
 }
 export interface WalletInfo {
 	address: string;

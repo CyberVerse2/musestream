@@ -8,11 +8,6 @@ export const PONS_FACTORY = '0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e' as cons
 export const PONS_LAUNCH_CONFIG = 0n;
 /** the zero address as pair token means the curve trades native ETH */
 export const NATIVE_PAIR = '0x0000000000000000000000000000000000000000' as const;
-/** the Uniswap V4 hook on every graduated pool; read from factory.memeHook() */
-export const PONS_MEME_HOOK = '0xE5e702641Ea86F4ae6cC3cDaeD2B886f976Be044' as const;
-/** graduated pools of launch config 0: no LP fee (the hook charges it), tick spacing 200 */
-export const PONS_POOL_FEE = 0;
-export const PONS_TICK_SPACING = 200;
 
 export const factoryAbi = [
 	{
@@ -1333,5 +1328,20 @@ export const escrowAbi = [
 			}
 		],
 		stateMutability: 'nonpayable'
+	}
+] as const;
+
+/**
+ * Graduation's second step: after a curve's reserves are swept, anyone may seed the
+ * Uniswap V4 pool with them. Pons runs a keeper for it; musestream calls it too, so a coin
+ * never waits. Retryable: the launch stays swept until a seed succeeds.
+ */
+export const graduationAbi = [
+	{
+		type: 'function',
+		name: 'createGraduatedPool',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'token', type: 'address' }],
+		outputs: [{ name: 'positionId', type: 'uint256' }]
 	}
 ] as const;

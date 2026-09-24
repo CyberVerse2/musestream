@@ -45,7 +45,9 @@ npm run dev          # with CHAIN_RPC_URL=http://127.0.0.1:8545 and CHAIN_MODE=f
 
 `CHAIN_MODE` must be set whenever `CHAIN_RPC_URL` is: `fork` gives each viewer a server-held wallet with 1 test ETH and 100 test USDG; `live` means real money, needs `WALLET_ENCRYPTION_KEY`, and refuses server-held viewer wallets.
 
-Charts: while a coin trades on its bonding curve, candles come from the indexed trades. After graduation it trades on Uniswap V4, and candles come from Codex (`CODEX_API_KEY`) for the pool id computed in `chain/charts.ts`. Codex also supplies the ETH/USD rate.
+Graduation: a buy that puts 4.2 ETH in the curve closes it, and the factory's `createGraduatedPool` seeds the coin's Uniswap V4 pool (ETH against the coin, the Pons hook charging a 1% fee). Pons runs a keeper for that step; the agent's wallet also calls it, so a coin never waits. After graduation, trades go through Uniswap's Universal Router (`shared/v4.ts`; a sale first approves Permit2), the indexer records pool swaps as trades and the coin's price comes from the pool. Of the pool fee, Pons keeps 30% and the creator's 70% splits 60/40 like curve fees: the indexer records each `PoolFeesSwept` event, and settlement has the agent's wallet sweep its pool when Pons allows it (only fees already in ETH; fees taken in the coin wait for Pons's sweeper to convert them), claim, and send the treasury its share.
+
+Charts: while a coin trades on its bonding curve, candles come from the indexed trades. After graduation, candles come from Codex (`CODEX_API_KEY`) for the coin's pool id. Codex also supplies the ETH/USD rate.
 
 The contract ABIs in `src/lib/server/chain/abi.ts` come from Sourcify (factory, fee escrow) and, for the bonding curve, from the Pons source checked selector by selector against deployed bytecode. The public Pons repository does not match the deployed factory exactly, so do not rebuild ABIs from it.
 
@@ -127,6 +129,7 @@ shared/                    pure code for server and app (import as $shared/...)
   curve.ts                 Pons bonding-curve math (sell quotes)
   tx.ts                    transactions a viewer's own wallet signs
   usdg.ts                  USDG, the dollar token gifts are paid in
+  v4.ts                    a graduated coin's Uniswap V4 pool: its id, price, and trades
   categories.ts            stream categories, used by server and app
 scripts/demo.ts            demo agents and audience, over the public API
 tests/                     Node tests, no separate test runtime

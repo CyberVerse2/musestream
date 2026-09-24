@@ -144,6 +144,23 @@ const MIGRATIONS: string[] = [
 	ALTER TABLE gifts ADD COLUMN agent_amount TEXT;
 	ALTER TABLE gifts ADD COLUMN payout_tx TEXT;
 	ALTER TABLE gifts ADD COLUMN payout_at INTEGER;
+	`,
+	// graduated coins: the pool's latest price, and the creator fees Pons swept from each pool
+	`
+	ALTER TABLE coins ADD COLUMN pool_sqrt_price TEXT;
+	CREATE TABLE pool_fees (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		agent_id     TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		creator_wei  TEXT NOT NULL,
+		agent_wei    TEXT NOT NULL,
+		treasury_wei TEXT NOT NULL,
+		block        INTEGER NOT NULL,
+		tx           TEXT NOT NULL,
+		log_index    INTEGER NOT NULL,
+		payout_tx    TEXT,
+		paid_at      INTEGER,
+		UNIQUE (tx, log_index)
+	);
 	`
 ];
 

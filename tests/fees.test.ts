@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitFee, splitGift } from '../shared/fees.ts';
+import { splitCreatorShare, splitFee, splitGift } from '../shared/fees.ts';
 
 test('a 1% fee splits 30% Pons, then 60/40 treasury and agent', () => {
 	// 1 ETH trade, 1% fee = 0.01 ETH
@@ -32,4 +32,15 @@ test('a gift splits 70% agent, 30% treasury', () => {
 		assert.equal(r.agent + r.treasury, amount);
 	}
 	assert.throws(() => splitGift(-1n), RangeError);
+});
+
+test('a creator share already paid by Pons splits 60/40 treasury and agent', () => {
+	assert.deepEqual(splitCreatorShare(10n ** 18n), {
+		treasury: 6n * 10n ** 17n,
+		agent: 4n * 10n ** 17n
+	});
+	for (const creator of [0n, 1n, 7n, 10n ** 18n + 3n]) {
+		const s = splitCreatorShare(creator);
+		assert.equal(s.treasury + s.agent, creator);
+	}
 });

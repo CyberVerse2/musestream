@@ -1,8 +1,8 @@
 // Price candles for a coin. While it trades on its bonding curve, every trade is in our
 // database. After graduation it trades on Uniswap V4, which Codex indexes.
-import { encodeAbiParameters, keccak256, type Address } from 'viem';
+import type { Address } from 'viem';
 import { buildCandles, INTERVALS, type Candle, type Interval } from '../../../../shared/candles.ts';
-import { NATIVE_PAIR, PONS_MEME_HOOK, PONS_POOL_FEE, PONS_TICK_SPACING } from './abi.ts';
+import { poolId } from '../../../../shared/v4.ts';
 import type { Coins } from './coins.ts';
 
 const ROBINHOOD_NETWORK_ID = 4663;
@@ -14,22 +14,6 @@ export interface CandleSet {
 	source: 'curve' | 'codex' | 'none';
 	/** prices in ETH per token */
 	candles: Candle[];
-}
-
-/** the Uniswap V4 pool id of a graduated Pons coin: keccak256(abi.encode(PoolKey)) */
-export function graduatedPoolId(token: Address): `0x${string}` {
-	return keccak256(
-		encodeAbiParameters(
-			[
-				{ type: 'address' },
-				{ type: 'address' },
-				{ type: 'uint24' },
-				{ type: 'int24' },
-				{ type: 'address' }
-			],
-			[NATIVE_PAIR, token, PONS_POOL_FEE, PONS_TICK_SPACING, PONS_MEME_HOOK]
-		)
-	);
 }
 
 export class Charts {
@@ -72,7 +56,7 @@ export class Charts {
 							removeEmptyBars: true, removeLeadingNullValues: true) { s t o h l c volumeNativeToken }
 					}`,
 					variables: {
-						symbol: `${graduatedPoolId(token)}:${ROBINHOOD_NETWORK_ID}`,
+						symbol: `${poolId(token)}:${ROBINHOOD_NETWORK_ID}`,
 						to: Math.floor(Date.now() / 1000),
 						resolution: CODEX_RESOLUTION[interval]
 					}

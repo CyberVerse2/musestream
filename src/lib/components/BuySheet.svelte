@@ -94,8 +94,8 @@
 		</button>
 		<p class="note">
 			{wallet.info?.testMoney ? 'Test ETH on a local chain. ' : ''}{tok.graduated
-				? 'This coin trades on the open market.'
-				: 'The coin moves to the open market when 4.2 ETH is in its curve.'}
+				? 'This coin trades in its Uniswap pool.'
+				: 'The coin moves to its Uniswap pool when 4.2 ETH is in its curve.'}
 		</p>
 	{:else}
 		<div class="done">

@@ -96,8 +96,9 @@ export async function signOut() {
 }
 
 /**
- * Sign a transaction with the viewer's wallet and send it to the app's RPC; resolves with its
- * hash. Dynamic signs; the broadcast does not go through Dynamic's network settings.
+ * Sign a transaction with the viewer's wallet, send it to the app's RPC, and wait until it
+ * lands; resolves with its hash. Dynamic signs; the broadcast does not go through Dynamic's
+ * network settings.
  */
 export async function sendFromWallet(tx: TxRequest): Promise<`0x${string}`> {
 	const { client, viem } = await sdk!;
@@ -111,5 +112,10 @@ export async function sendFromWallet(tx: TxRequest): Promise<`0x${string}`> {
 		chain: dynamicWallet.chain,
 		transport: http(rpcUrl)
 	});
-	return wallet.sendTransaction({ ...tx, account: wallet.account, chain: wallet.chain });
+	const hash = await wallet.sendTransaction({ ...tx, account: wallet.account, chain: wallet.chain });
+	const { createPublicClient } = await import('viem');
+	const receipt = await createPublicClient({ chain: wallet.chain, transport: http(rpcUrl) })
+		.waitForTransactionReceipt({ hash });
+	if (receipt.status !== 'success') throw new Error('The transaction was reverted.');
+	return hash;
 }

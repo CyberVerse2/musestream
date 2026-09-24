@@ -21,9 +21,17 @@ export function splitFee(fee: bigint, protocolBps: bigint): FeeSplit {
 	if (fee < 0n) throw new RangeError('fee must not be negative');
 	if (protocolBps < 0n || protocolBps > BPS) throw new RangeError('protocolBps must be 0 to 10000');
 	const protocol = (fee * protocolBps) / BPS;
-	const creator = fee - protocol;
+	return { protocol, ...splitCreatorShare(fee - protocol) };
+}
+
+/**
+ * Split what Pons already paid the coin's creator, e.g. a graduated pool's swept fees:
+ * musestream's 60% and the agent's 40%. The agent gets the remainder.
+ */
+export function splitCreatorShare(creator: bigint): Omit<FeeSplit, 'protocol'> {
+	if (creator < 0n) throw new RangeError('creator share must not be negative');
 	const treasury = (creator * TREASURY_SHARE_BPS) / BPS;
-	return { protocol, treasury, agent: creator - treasury };
+	return { treasury, agent: creator - treasury };
 }
 
 /**

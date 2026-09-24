@@ -25,10 +25,30 @@ import {
 	type Transport,
 	type Chain
 } from 'viem';
-import { splitFee } from '../../../../shared/fees.ts';
+import { splitCreatorShare, splitFee } from '../../../../shared/fees.ts';
 import { sellQuote, withSlippage } from '../../../../shared/curve.ts';
 import { USDG } from '../../../../shared/usdg.ts';
-import { transferTx } from '../../../../shared/tx.ts';
+import { approveTx, buyTx, sellTx, transferTx, type TxRequest } from '../../../../shared/tx.ts';
+import {
+	PERMIT2,
+	POOL_MANAGER,
+	PONS_MEME_HOOK,
+	STATE_VIEW,
+	UNIVERSAL_ROUTER,
+	V4_QUOTER,
+	permit2Abi,
+	permit2RouterApprovalTx,
+	permit2TokenApprovalTx,
+	poolBuyTx,
+	poolId,
+	poolKey,
+	poolManagerAbi,
+	poolSellTx,
+	ponsHookAbi,
+	priceFromSqrt,
+	quoterAbi,
+	stateViewAbi
+} from '../../../../shared/v4.ts';
 import type { DB } from '../db.ts';
 import type { Hub } from '../hub.ts';
 import type { AgentRow } from '../service.ts';
@@ -37,6 +57,7 @@ import {
 	curveAbi,
 	escrowAbi,
 	factoryAbi,
+	graduationAbi,
 	NATIVE_PAIR,
 	PONS_FACTORY,
 	PONS_LAUNCH_CONFIG
@@ -50,6 +71,7 @@ const PAYOUT_MIN_USDG = 100_000n; // $0.10
 /** gas budgets for funding an agent's wallet; a launch measured about 3.6M gas on a fork */
 const LAUNCH_GAS = 4_500_000n;
 const SETTLE_GAS = 400_000n;
+const POOL_GAS = 3_000_000n;
 /** where USDG keeps balances: `mapping(address => uint256)` at storage slot 1 */
 const USDG_BALANCE_SLOT = 1n;
 
@@ -63,6 +85,7 @@ export interface CoinRow {
 	token_reserve: string;
 	real_quote: string;
 	graduated: number;
+	pool_sqrt_price: string | null;
 	error: string | null;
 	created_at: number;
 }
@@ -73,7 +96,14 @@ interface FeeSettlement {
 	swept: bigint;
 	claimed: bigint;
 	toTreasury: bigint;
-	tx: Hash;
+	tx: Hash | null;
+}
+
+/** the transactions for one trade, in order, and what the trade should return */
+export interface TradePlan {
+	expected: bigint;
+	minOut: bigint;
+	txs: TxRequest[];
 }
 
 export interface TradeRow {
@@ -364,6 +394,45 @@ export class Coins {
 				 WHERE agent_id = ?`
 			)
 			.run(quote.toString(), tokens.toString(), real.toString(), graduated ? 1 : 0, agentId);
+		if (graduated && coin.token) {
+			let sqrtPriceX96 = await this.poolPrice(coin.token);
+			if (sqrtPriceX96 === 0n) {
+				await this.createPool(agentId, coin.token);
+				sqrtPriceX96 = await this.poolPrice(coin.token);
+			}
+			this.o.db
+				.prepare('UPDATE coins SET pool_sqrt_price = ? WHERE agent_id = ?')
+				.run(sqrtPriceX96.toString(), agentId);
+		}
+	}
+
+	private async poolPrice(token: Address): Promise<bigint> {
+		const [sqrtPriceX96] = await this.o.client.readContract({
+			address: STATE_VIEW,
+			abi: stateViewAbi,
+			functionName: 'getSlot0',
+			args: [poolId(token)]
+		});
+		return sqrtPriceX96;
+	}
+
+	/** seed a graduated coin's pool from the agent's wallet, unless someone already has */
+	private async createPool(agentId: string, token: Address) {
+		const agent = this.o.wallets.find('agent', agentId);
+		if (!agent) return;
+		await this.fundGas(agent.address, POOL_GAS);
+		await this.serial(agent.address, async () => {
+			if ((await this.poolPrice(token)) !== 0n) return;
+			const signer = await this.signer(agent);
+			const { request } = await this.o.client.simulateContract({
+				account: signer.account,
+				address: PONS_FACTORY,
+				abi: graduationAbi,
+				functionName: 'createGraduatedPool',
+				args: [token]
+			});
+			await this.confirm(await signer.writeContract(request));
+		});
 	}
 
 	view(agentId: string): CoinView | null {
@@ -371,7 +440,13 @@ export class Coins {
 		if (!coin) return null;
 		const quote = BigInt(coin.quote_reserve);
 		const tokens = BigInt(coin.token_reserve);
-		const priceEth = tokens > 0n ? Number(formatEther((quote * 10n ** 18n) / tokens)) : 0;
+		// a graduated coin's price is its pool's; the curve is empty after graduation
+		const priceEth =
+			coin.graduated && coin.pool_sqrt_price
+				? priceFromSqrt(BigInt(coin.pool_sqrt_price))
+				: tokens > 0n
+					? Number(formatEther((quote * 10n ** 18n) / tokens))
+					: 0;
 		const threshold = this.graduationThreshold ?? 42n * 10n ** 17n;
 		const graduationPct = coin.graduated
 			? 100
@@ -476,115 +551,26 @@ export class Coins {
 		if (!coin || coin.status !== 'live' || !coin.curve || !coin.token) {
 			throw new MusestreamError(409, 'no_coin', 'This agent has no coin yet.');
 		}
-		if (coin.graduated) {
-			throw new MusestreamError(
-				409,
-				'graduated',
-				'This coin has graduated. It trades on Uniswap now.'
-			);
-		}
 		return coin as CoinRow & { curve: Address; token: Address };
 	}
 
-	/** buy with `weiIn` ETH; refuses if the price moves more than `slippageBps` */
-	buy(wallet: WalletRow, agentId: string, weiIn: bigint, slippageBps = 300n) {
-		return this.serial(wallet.address, () => this.buyNow(wallet, agentId, weiIn, slippageBps));
-	}
-	private async buyNow(wallet: WalletRow, agentId: string, weiIn: bigint, slippageBps: bigint) {
+	/**
+	 * The transactions that buy `wei` of an agent's coin for `from`, in order, and what they
+	 * should return. On the bonding curve until graduation, then on the Uniswap V4 pool.
+	 * Every trade refuses a price more than 3% worse than quoted.
+	 */
+	async planBuy(agentId: string, from: Address, wei: bigint): Promise<TradePlan> {
 		const coin = this.liveCoin(agentId);
-		const signer = await this.signer(wallet);
 		try {
-			const { result: expected } = await this.o.client.simulateContract({
-				account: signer.account,
-				address: coin.curve,
-				abi: curveAbi,
-				functionName: 'buy',
-				args: [weiIn, 0n, wallet.address],
-				value: weiIn
-			});
-			const minOut = (expected * (10_000n - slippageBps)) / 10_000n;
-			const { request } = await this.o.client.simulateContract({
-				account: signer.account,
-				address: coin.curve,
-				abi: curveAbi,
-				functionName: 'buy',
-				args: [weiIn, minOut, wallet.address],
-				value: weiIn
-			});
-			const hash = await signer.writeContract(request);
-			await this.confirm(hash);
-			await this.sync();
-			return { hash, tokens: expected };
-		} catch (err) {
-			if (err instanceof MusestreamError) throw err;
-			throw new MusestreamError(
-				400,
-				'trade_failed',
-				`The buy did not go through: ${revertReason(err)}.`
-			);
-		}
-	}
-
-	/** sell `tokensIn` tokens; refuses if the price moves more than `slippageBps` */
-	sell(wallet: WalletRow, agentId: string, tokensIn: bigint, slippageBps = 300n) {
-		return this.serial(wallet.address, () => this.sellNow(wallet, agentId, tokensIn, slippageBps));
-	}
-	private async sellNow(wallet: WalletRow, agentId: string, tokensIn: bigint, slippageBps: bigint) {
-		const coin = this.liveCoin(agentId);
-		const signer = await this.signer(wallet);
-		try {
-			const allowance = await this.o.client.readContract({
-				address: coin.token,
-				abi: erc20Abi,
-				functionName: 'allowance',
-				args: [wallet.address, coin.curve]
-			});
-			if (allowance < tokensIn) {
-				const hash = await signer.writeContract({
-					address: coin.token,
-					abi: erc20Abi,
-					functionName: 'approve',
-					args: [coin.curve, tokensIn],
-					chain: this.o.client.chain,
-					account: signer.account
-				});
-				await this.confirm(hash);
+			if (coin.graduated) {
+				const expected = await this.poolQuote(coin.token, true, wei);
+				const minOut = withSlippage(expected, 300n);
+				return {
+					expected,
+					minOut,
+					txs: [poolBuyTx(coin.token, wei, minOut, await this.deadline())]
+				};
 			}
-			const { result: expected } = await this.o.client.simulateContract({
-				account: signer.account,
-				address: coin.curve,
-				abi: curveAbi,
-				functionName: 'sell',
-				args: [tokensIn, 0n, wallet.address]
-			});
-			const minOut = (expected * (10_000n - slippageBps)) / 10_000n;
-			const { request } = await this.o.client.simulateContract({
-				account: signer.account,
-				address: coin.curve,
-				abi: curveAbi,
-				functionName: 'sell',
-				args: [tokensIn, minOut, wallet.address]
-			});
-			const hash = await signer.writeContract(request);
-			await this.confirm(hash);
-			await this.sync();
-			return { hash, wei: expected };
-		} catch (err) {
-			if (err instanceof MusestreamError) throw err;
-			throw new MusestreamError(
-				400,
-				'trade_failed',
-				`The sale did not go through: ${revertReason(err)}.`
-			);
-		}
-	}
-
-	/* ---------------- quotes for wallets that sign for themselves ---------------- */
-
-	/** what buying for `wei` from `from` returns now, and the least to accept */
-	async quoteBuy(agentId: string, from: Address, wei: bigint) {
-		const coin = this.liveCoin(agentId);
-		try {
 			const { result: expected } = await this.o.client.simulateContract({
 				account: from,
 				address: coin.curve,
@@ -595,12 +581,8 @@ export class Coins {
 				// the quote must not depend on whether the wallet is funded yet
 				stateOverride: [{ address: from, balance: wei + 10n ** 18n }]
 			});
-			return {
-				curve: coin.curve,
-				token: coin.token,
-				expected,
-				minOut: withSlippage(expected, 300n)
-			};
+			const minOut = withSlippage(expected, 300n);
+			return { expected, minOut, txs: [buyTx(coin.curve, wei, minOut, from)] };
 		} catch (err) {
 			throw new MusestreamError(
 				400,
@@ -610,34 +592,135 @@ export class Coins {
 		}
 	}
 
-	/** what selling a fraction of `from`'s tokens returns now, and the least to accept */
-	async quoteSell(agentId: string, from: Address, fraction: 0.25 | 0.5 | 1) {
+	/** the transactions that sell `tokens` of an agent's coin from `from`, approvals first */
+	async planSell(agentId: string, from: Address, tokens: bigint): Promise<TradePlan> {
 		const coin = this.liveCoin(agentId);
-		const [balance, [quote, tokens], feeBps] = await Promise.all([
-			this.o.client.readContract({
-				address: coin.token,
-				abi: erc20Abi,
-				functionName: 'balanceOf',
-				args: [from]
-			}),
-			this.o.client.readContract({
-				address: coin.curve,
-				abi: curveAbi,
-				functionName: 'getReserves'
-			}),
-			this.o.client.readContract({ address: coin.curve, abi: curveAbi, functionName: 'feeBps' })
-		]);
-		const amount = fraction === 1 ? balance : (balance * BigInt(fraction * 100)) / 100n;
-		if (amount === 0n)
+		if (tokens === 0n)
 			throw new MusestreamError(409, 'nothing_to_sell', 'This wallet holds none of this coin.');
-		const expected = sellQuote(amount, { quote, tokens }, feeBps);
-		return {
-			curve: coin.curve,
-			token: coin.token,
-			tokens: amount,
-			expected,
-			minOut: withSlippage(expected, 300n)
-		};
+		try {
+			if (coin.graduated) {
+				const [expected, toPermit2, [toRouter, expiration]] = await Promise.all([
+					this.poolQuote(coin.token, false, tokens),
+					this.o.client.readContract({
+						address: coin.token,
+						abi: erc20Abi,
+						functionName: 'allowance',
+						args: [from, PERMIT2]
+					}),
+					this.o.client.readContract({
+						address: PERMIT2,
+						abi: permit2Abi,
+						functionName: 'allowance',
+						args: [from, coin.token, UNIVERSAL_ROUTER]
+					})
+				]);
+				const deadline = await this.deadline();
+				const txs: TxRequest[] = [];
+				if (toPermit2 < tokens) txs.push(permit2TokenApprovalTx(coin.token));
+				if (toRouter < tokens || BigInt(expiration) < deadline) {
+					txs.push(permit2RouterApprovalTx(coin.token, Number(deadline) + 30 * 86_400));
+				}
+				const minOut = withSlippage(expected, 300n);
+				txs.push(poolSellTx(coin.token, tokens, minOut, deadline));
+				return { expected, minOut, txs };
+			}
+			const [[quote, reserveTokens], feeBps, allowance] = await Promise.all([
+				this.o.client.readContract({
+					address: coin.curve,
+					abi: curveAbi,
+					functionName: 'getReserves'
+				}),
+				this.o.client.readContract({ address: coin.curve, abi: curveAbi, functionName: 'feeBps' }),
+				this.o.client.readContract({
+					address: coin.token,
+					abi: erc20Abi,
+					functionName: 'allowance',
+					args: [from, coin.curve]
+				})
+			]);
+			const expected = sellQuote(tokens, { quote, tokens: reserveTokens }, feeBps);
+			const minOut = withSlippage(expected, 300n);
+			const txs: TxRequest[] = [];
+			if (allowance < tokens) txs.push(approveTx(coin.token, coin.curve, tokens));
+			txs.push(sellTx(coin.curve, tokens, minOut, from));
+			return { expected, minOut, txs };
+		} catch (err) {
+			throw new MusestreamError(
+				400,
+				'quote_failed',
+				`No price for this sale: ${revertReason(err)}.`
+			);
+		}
+	}
+
+	/** what the pool pays out now for `amountIn` of ETH (`ethIn`) or of the coin */
+	private async poolQuote(token: Address, ethIn: boolean, amountIn: bigint): Promise<bigint> {
+		const { result } = await this.o.client.simulateContract({
+			address: V4_QUOTER,
+			abi: quoterAbi,
+			functionName: 'quoteExactInputSingle',
+			args: [{ poolKey: poolKey(token), zeroForOne: ethIn, exactAmount: amountIn, hookData: '0x' }]
+		});
+		return result[0];
+	}
+
+	/** a swap deadline 20 minutes past the chain's clock, which a fork may have moved */
+	private async deadline(): Promise<bigint> {
+		const block = await this.o.client.getBlock();
+		return block.timestamp + 20n * 60n;
+	}
+
+	/** buy with `weiIn` ETH from a server-held wallet */
+	buy(wallet: WalletRow, agentId: string, weiIn: bigint) {
+		return this.serial(wallet.address, async () => {
+			const plan = await this.planBuy(agentId, wallet.address, weiIn);
+			const hash = await this.execute(wallet, plan, 'The buy');
+			return { hash, tokens: plan.expected };
+		});
+	}
+
+	/** sell `tokensIn` tokens from a server-held wallet */
+	sell(wallet: WalletRow, agentId: string, tokensIn: bigint) {
+		return this.serial(wallet.address, async () => {
+			const plan = await this.planSell(agentId, wallet.address, tokensIn);
+			const hash = await this.execute(wallet, plan, 'The sale');
+			return { hash, wei: plan.expected };
+		});
+	}
+
+	/** send a plan's transactions in order; returns the last one, the trade itself */
+	private async execute(wallet: WalletRow, plan: TradePlan, what: string): Promise<Hash> {
+		const signer = await this.signer(wallet);
+		try {
+			let hash: Hash | null = null;
+			for (const tx of plan.txs) {
+				hash = await signer.sendTransaction({
+					...tx,
+					chain: this.o.client.chain,
+					account: signer.account
+				});
+				await this.confirm(hash);
+			}
+			await this.sync();
+			return hash!;
+		} catch (err) {
+			throw new MusestreamError(
+				400,
+				'trade_failed',
+				`${what} did not go through: ${revertReason(err)}.`
+			);
+		}
+	}
+
+	/** how many of an agent's coins `address` holds */
+	tokenBalance(agentId: string, address: Address): Promise<bigint> {
+		const coin = this.liveCoin(agentId);
+		return this.o.client.readContract({
+			address: coin.token,
+			abi: erc20Abi,
+			functionName: 'balanceOf',
+			args: [address]
+		});
 	}
 
 	/**
@@ -794,6 +877,7 @@ export class Coins {
 					touched.add(agentId);
 				}
 			}
+			await this.indexPools(from, to, blockTimes, touched);
 			this.o.db
 				.prepare(
 					`INSERT INTO chain_cursor (name, block) VALUES ('trades', ?)
@@ -805,6 +889,96 @@ export class Coins {
 		for (const agentId of touched) {
 			await this.refreshReserves(agentId);
 			this.o.hub.emitGlobal({ type: 'coin', agentId });
+		}
+	}
+
+	/**
+	 * Graduated coins trade on their Uniswap V4 pools: record each swap as a trade (the trader
+	 * is whoever sent the transaction, since the pool sees only the router), and record the
+	 * creator fees Pons sweeps from each pool, which musestream and the agent split 60/40.
+	 */
+	private async indexPools(
+		from: bigint,
+		to: bigint,
+		blockTimes: Map<bigint, number>,
+		touched: Set<string>
+	) {
+		const graduated = this.o.db
+			.prepare(`SELECT agent_id, token FROM coins WHERE graduated = 1 AND token IS NOT NULL`)
+			.all() as { agent_id: string; token: Address }[];
+		if (!graduated.length) return;
+		const byPool = new Map(graduated.map((c) => [poolId(c.token), c.agent_id]));
+		const ids = [...byPool.keys()];
+		const [swaps, sweeps] = await Promise.all([
+			this.o.client.getLogs({
+				address: POOL_MANAGER,
+				event: poolManagerAbi[0],
+				args: { id: ids },
+				fromBlock: from,
+				toBlock: to
+			}),
+			this.o.client.getLogs({
+				address: PONS_MEME_HOOK,
+				event: ponsHookAbi[0],
+				args: { poolId: ids },
+				fromBlock: from,
+				toBlock: to
+			})
+		]);
+		const at = async (block: bigint) => {
+			if (!blockTimes.has(block)) {
+				const b = await this.o.client.getBlock({ blockNumber: block });
+				blockTimes.set(block, Number(b.timestamp) * 1000);
+			}
+			return blockTimes.get(block)!;
+		};
+		for (const log of swaps) {
+			const agentId = byPool.get(log.args.id!);
+			if (!agentId || log.blockNumber === null || log.transactionHash === null) continue;
+			// amounts are the swapper's: negative is what it paid in
+			const buy = log.args.amount0! < 0n;
+			const abs = (v: bigint) => (v < 0n ? -v : v);
+			const { from: trader } = await this.o.client.getTransaction({ hash: log.transactionHash });
+			const inserted = this.o.db
+				.prepare(
+					`INSERT OR IGNORE INTO trades
+					 (agent_id, side, trader, quote_wei, tokens, fee_wei, price_eth, block, tx, log_index, at)
+					 VALUES (?, ?, ?, ?, ?, '0', ?, ?, ?, ?, ?)`
+				)
+				.run(
+					agentId,
+					buy ? 'buy' : 'sell',
+					trader,
+					abs(log.args.amount0!).toString(),
+					abs(log.args.amount1!).toString(),
+					priceFromSqrt(log.args.sqrtPriceX96!),
+					Number(log.blockNumber),
+					log.transactionHash,
+					log.logIndex ?? 0,
+					await at(log.blockNumber)
+				);
+			if (inserted.changes) touched.add(agentId);
+		}
+		for (const log of sweeps) {
+			const agentId = byPool.get(log.args.poolId!);
+			if (!agentId || log.blockNumber === null || log.transactionHash === null) continue;
+			const creator = log.args.creatorAmount!;
+			const split = splitCreatorShare(creator);
+			this.o.db
+				.prepare(
+					`INSERT OR IGNORE INTO pool_fees
+					 (agent_id, creator_wei, agent_wei, treasury_wei, block, tx, log_index)
+					 VALUES (?, ?, ?, ?, ?, ?, ?)`
+				)
+				.run(
+					agentId,
+					creator.toString(),
+					split.agent.toString(),
+					split.treasury.toString(),
+					Number(log.blockNumber),
+					log.transactionHash,
+					log.logIndex ?? 0
+				);
 		}
 	}
 
@@ -828,100 +1002,171 @@ export class Coins {
 	/* ---------------- fees ---------------- */
 
 	/**
-	 * Settle what each side is owed. Each agent's wallet sweeps its curve's fees into the Pons
-	 * escrow, claims them, and sends the treasury musestream's share in ETH. The treasury then
-	 * pays each agent its gift share in USDG. One agent failing does not stop the others.
+	 * Settle what each side is owed. Each agent's wallet collects its creator fees (sweeping
+	 * its curve, or its graduated pool when Pons allows the creator to, then claiming the
+	 * escrow) and sends the treasury musestream's 60% in ETH. The treasury then pays each
+	 * agent its gift share in USDG. One agent failing does not stop the others.
 	 * Returns what happened, for logs.
 	 */
 	async settleFees() {
 		await this.sync();
 		const treasury = await this.treasury();
+		const coins = this.o.db
+			.prepare(
+				`SELECT agent_id, curve, token, graduated FROM coins
+				 WHERE status = 'live' AND curve IS NOT NULL AND token IS NOT NULL`
+			)
+			.all() as { agent_id: string; curve: Address; token: Address; graduated: number }[];
 		const fees: FeeSettlement[] = [];
 		const failed: { agentId: string; error: string }[] = [];
-		for (const owed of this.unsettledFees()) {
-			if (owed.treasuryWei < PAYOUT_MIN_WEI) continue;
+		for (const coin of coins) {
 			try {
-				fees.push(await this.settleAgentFees(treasury, owed));
+				const settled = await this.settleAgentFees(treasury, coin);
+				if (settled) fees.push(settled);
 			} catch (err) {
-				failed.push({ agentId: owed.agentId, error: revertReason(err) });
+				failed.push({ agentId: coin.agent_id, error: revertReason(err) });
 			}
 		}
 		const gifts = await this.serial(treasury.address, () => this.payGiftShares(treasury));
 		return { fees, gifts, failed };
 	}
 
-	/** fee shares the treasury has not collected yet, per agent */
-	private unsettledFees() {
+	/** trade and pool fee shares the treasury has not collected from one agent yet */
+	private unsettledFees(agentId: string) {
 		const rows = this.o.db
 			.prepare(
-				`SELECT f.agent_id, c.curve, GROUP_CONCAT(f.id) AS ids, GROUP_CONCAT(f.treasury_wei) AS amounts
-				 FROM fee_ledger f JOIN coins c ON c.agent_id = f.agent_id
-				 WHERE f.paid_at IS NULL AND c.curve IS NOT NULL
-				 GROUP BY f.agent_id`
+				`SELECT 'fee_ledger' AS tbl, id, treasury_wei FROM fee_ledger WHERE agent_id = ? AND paid_at IS NULL
+				 UNION ALL
+				 SELECT 'pool_fees', id, treasury_wei FROM pool_fees WHERE agent_id = ? AND paid_at IS NULL`
 			)
-			.all() as { agent_id: string; curve: Address; ids: string; amounts: string }[];
-		return rows.map((r) => ({
-			agentId: r.agent_id,
-			curve: r.curve,
-			ids: r.ids.split(',').map(Number),
-			treasuryWei: r.amounts.split(',').reduce((sum, v) => sum + BigInt(v), 0n)
-		}));
+			.all(agentId, agentId) as {
+			tbl: 'fee_ledger' | 'pool_fees';
+			id: number;
+			treasury_wei: string;
+		}[];
+		return {
+			rows,
+			treasuryWei: rows.reduce((sum, r) => sum + BigInt(r.treasury_wei), 0n)
+		};
+	}
+
+	/** what is waiting to be collected for one coin, read without sending anything */
+	private async pendingFor(
+		agent: Address,
+		coin: { curve: Address; token: Address; graduated: number }
+	) {
+		const escrow = await this.feeEscrow();
+		const [curve, claimable] = await Promise.all([
+			coin.graduated
+				? Promise.resolve(0n)
+				: this.o.client.readContract({
+						address: coin.curve,
+						abi: curveAbi,
+						functionName: 'quoteFeeBalance'
+					}),
+			this.o.client.readContract({
+				address: escrow,
+				abi: escrowAbi,
+				functionName: 'balanceOf',
+				args: [agent]
+			})
+		]);
+		// a pool's creator may sweep only fees already in ETH; fees taken in the coin need Pons's
+		// own sweeper to convert them first, so the sweep is simulated before it is sent
+		let pool = false;
+		if (coin.graduated) {
+			const pendingEth = await this.o.client.readContract({
+				address: PONS_MEME_HOOK,
+				abi: ponsHookAbi,
+				functionName: 'pendingFees',
+				args: [poolId(coin.token), NATIVE_PAIR]
+			});
+			if (pendingEth >= PAYOUT_MIN_WEI) {
+				pool = await this.o.client
+					.simulateContract({
+						account: agent,
+						address: PONS_MEME_HOOK,
+						abi: ponsHookAbi,
+						functionName: 'sweepPoolFees',
+						args: [poolId(coin.token), 0n, 0n]
+					})
+					.then(() => true)
+					.catch(() => false);
+			}
+		}
+		return { escrow, curve, claimable, pool };
+	}
+
+	private feeEscrowAddress: Address | null = null;
+	private async feeEscrow(): Promise<Address> {
+		this.feeEscrowAddress ??= await this.o.client.readContract({
+			address: PONS_FACTORY,
+			abi: factoryAbi,
+			functionName: 'feeEscrow'
+		});
+		return this.feeEscrowAddress;
 	}
 
 	private async settleAgentFees(
 		treasury: WalletRow,
-		owed: { agentId: string; curve: Address; ids: number[]; treasuryWei: bigint }
-	): Promise<FeeSettlement> {
-		const agent = await this.o.wallets.ensure('agent', owed.agentId);
+		coin: { agent_id: string; curve: Address; token: Address; graduated: number }
+	): Promise<FeeSettlement | null> {
+		const agent = this.o.wallets.find('agent', coin.agent_id);
+		if (!agent) return null;
+		const pending = await this.pendingFor(agent.address, coin);
+		const sweepCurve = pending.curve >= PAYOUT_MIN_WEI;
+		const owed = this.unsettledFees(coin.agent_id).treasuryWei;
+		if (!sweepCurve && !pending.pool && pending.claimable < PAYOUT_MIN_WEI && owed < PAYOUT_MIN_WEI)
+			return null;
 		await this.fundGas(agent.address, SETTLE_GAS);
 		return this.serial(agent.address, async () => {
 			const signer = await this.signer(agent);
-			const swept = await this.o.client.readContract({
-				address: owed.curve,
-				abi: curveAbi,
-				functionName: 'quoteFeeBalance'
-			});
-			if (swept > 0n) {
-				await this.confirm(
-					await signer.writeContract({
-						address: owed.curve,
-						abi: curveAbi,
-						functionName: 'sweepFees',
-						args: [0n],
-						chain: this.o.client.chain,
-						account: signer.account
-					})
-				);
+			const send = async (request: Parameters<typeof signer.writeContract>[0]) =>
+				this.confirm(await signer.writeContract(request));
+			const base = { chain: this.o.client.chain, account: signer.account };
+			if (sweepCurve) {
+				await send({
+					...base,
+					address: coin.curve,
+					abi: curveAbi,
+					functionName: 'sweepFees',
+					args: [0n]
+				});
 			}
-			const escrow = await this.o.client.readContract({
-				address: PONS_FACTORY,
-				abi: factoryAbi,
-				functionName: 'feeEscrow'
-			});
+			if (pending.pool) {
+				await send({
+					...base,
+					address: PONS_MEME_HOOK,
+					abi: ponsHookAbi,
+					functionName: 'sweepPoolFees',
+					args: [poolId(coin.token), 0n, 0n]
+				});
+				// the sweep's event is what records the pool fees; read it before paying
+				await this.sync();
+			}
 			const claimed = await this.o.client.readContract({
-				address: escrow,
+				address: pending.escrow,
 				abi: escrowAbi,
 				functionName: 'balanceOf',
 				args: [agent.address]
 			});
 			if (claimed > 0n) {
-				await this.confirm(
-					await signer.writeContract({
-						address: escrow,
-						abi: escrowAbi,
-						functionName: 'claim',
-						chain: this.o.client.chain,
-						account: signer.account
-					})
-				);
+				await send({ ...base, address: pending.escrow, abi: escrowAbi, functionName: 'claim' });
 			}
-			const tx = await this.sendNow(agent, treasury.address, owed.treasuryWei);
-			this.o.db
-				.prepare(
-					`UPDATE fee_ledger SET payout_tx = ?, paid_at = ? WHERE id IN (${owed.ids.map(() => '?').join(',')})`
-				)
-				.run(tx, this.o.now(), ...owed.ids);
-			return { agentId: owed.agentId, swept, claimed, toTreasury: owed.treasuryWei, tx };
+			const { rows, treasuryWei } = this.unsettledFees(coin.agent_id);
+			if (treasuryWei < PAYOUT_MIN_WEI) {
+				return { agentId: coin.agent_id, swept: pending.curve, claimed, toTreasury: 0n, tx: null };
+			}
+			const tx = await this.sendNow(agent, treasury.address, treasuryWei);
+			const at = this.o.now();
+			this.o.db.transaction(() => {
+				for (const r of rows) {
+					this.o.db
+						.prepare(`UPDATE ${r.tbl} SET payout_tx = ?, paid_at = ? WHERE id = ?`)
+						.run(tx, at, r.id);
+				}
+			})();
+			return { agentId: coin.agent_id, swept: pending.curve, claimed, toTreasury: treasuryWei, tx };
 		});
 	}
 
@@ -967,6 +1212,8 @@ export class Coins {
 			.prepare(
 				`SELECT * FROM (
 				   SELECT 'fees' AS source, id, agent_id, agent_wei AS agent_amount, paid_at FROM fee_ledger
+				   UNION ALL
+				   SELECT 'fees', id, agent_id, agent_wei, paid_at FROM pool_fees
 				   UNION ALL
 				   SELECT 'gifts', g.id, s.agent_id, g.agent_amount, g.payout_at
 				   FROM gifts g JOIN streams s ON s.id = g.stream_id

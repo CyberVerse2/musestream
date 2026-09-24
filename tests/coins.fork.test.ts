@@ -12,6 +12,7 @@ import { openDb } from '../src/lib/server/db.ts';
 import { Musestream } from '../src/lib/server/service.ts';
 import { Coins } from '../src/lib/server/chain/coins.ts';
 import { usdgFromCents } from '../shared/usdg.ts';
+import { PONS_MEME_HOOK, ponsHookAbi } from '../shared/v4.ts';
 import {
 	LocalWallets,
 	Sealer,
@@ -128,7 +129,7 @@ test(
 		const [settled] = result.fees;
 		assert.ok(settled!.swept > 0n, 'the agent swept fees from its curve into the escrow');
 		assert.ok(settled!.claimed > 0n, 'the agent claimed its escrow balance');
-		const toTreasury = await client.getTransaction({ hash: settled!.tx });
+		const toTreasury = await client.getTransaction({ hash: settled!.tx! });
 		assert.equal(toTreasury.to?.toLowerCase(), treasury.address.toLowerCase());
 		assert.equal(toTreasury.value, treasuryShare, 'musestream got exactly its 60% share');
 		assert.equal(
@@ -209,5 +210,119 @@ test(
 			'the shared sell math matches the contract to the wei'
 		);
 		assert.ok((await client.getBalance({ address: account.address })) > before);
+	}
+);
+
+test(
+	'a graduated coin trades on its Uniswap pool, and musestream collects 60% of its pool fees',
+	{ skip: !RPC },
+	async () => {
+		const { poolId } = await import('../shared/v4.ts');
+		const db = openDb(':memory:');
+		const musestream = new Musestream(db, video);
+		const client = createPublicClient({ chain: robinhood, transport: http(RPC) });
+		const wallets = new Wallets(db, await walletProvider());
+		const coins = new Coins({
+			db,
+			hub: musestream.hub,
+			wallets,
+			client,
+			rpcUrl: RPC!,
+			devFork: true
+		});
+		const { agent } = musestream.registerAgent({
+			handle: `p${randomBytes(3).toString('hex')}`,
+			name: 'Pool',
+			operator: 'o',
+			category: 'Talk'
+		});
+		const coin = await coins.launch(agent);
+		await client.request({ method: 'evm_increaseTime' as never, params: [120] as never });
+		await client.request({ method: 'evm_mine' as never, params: [] as never });
+
+		// buying past 4.2 ETH on the curve graduates the coin into its pool
+		const whale = await wallets.ensure('viewer', 'lurker-whale');
+		await coins.topUp(whale.address, parseEther('20'));
+		for (const eth of ['2', '2', '1.5']) await coins.buy(whale, agent.id, parseEther(eth));
+		const view = coins.view(agent.id)!;
+		assert.equal(view.graduated, true);
+		assert.ok(view.priceEth > 0, 'a graduated coin is priced from its pool');
+
+		// a viewer buys and sells on the pool through the Universal Router
+		const viewer = await wallets.ensure('viewer', 'lurker-pool');
+		await coins.topUp(viewer.address, parseEther('2'));
+		const bought = await coins.buy(viewer, agent.id, parseEther('0.5'));
+		assert.ok(bought.tokens > 0n);
+		const held = await coins.tokenBalance(agent.id, viewer.address);
+		assert.ok(
+			held >= (bought.tokens * 97n) / 100n,
+			'the buy delivered what was quoted, less slippage'
+		);
+		const trades = coins.recentTrades(agent.id).filter((t) => t.fee_wei === '0');
+		assert.deepEqual(
+			trades.map((t) => [t.side, t.trader.toLowerCase()]),
+			[['buy', viewer.address.toLowerCase()]],
+			"pool swaps are recorded as the sender's trades"
+		);
+
+		// a buy takes the hook fee in the coin; only Pons's sweeper can convert and sweep that
+		const operator = await client.readContract({
+			address: PONS_MEME_HOOK,
+			abi: [
+				{
+					type: 'function',
+					name: 'feeSweepOperator',
+					stateMutability: 'view',
+					inputs: [],
+					outputs: [{ type: 'address' }]
+				}
+			] as const,
+			functionName: 'feeSweepOperator'
+		});
+		await client.request({
+			method: 'anvil_impersonateAccount' as never,
+			params: [operator] as never
+		});
+		await coins.topUp(operator, parseEther('1'));
+		const { createWalletClient } = await import('viem');
+		const ponsSweeper = createWalletClient({
+			account: operator,
+			chain: robinhood,
+			transport: http(RPC)
+		});
+		const sweep = await ponsSweeper.writeContract({
+			address: PONS_MEME_HOOK,
+			abi: ponsHookAbi,
+			functionName: 'sweepPoolFees',
+			// converting coin fees to ETH needs a nonzero minimum
+			args: [poolId(coin.token!), 1n, 0n]
+		});
+		await client.waitForTransactionReceipt({ hash: sweep });
+		await coins.sync();
+		const swept = db.prepare('SELECT creator_wei, treasury_wei FROM pool_fees').all() as {
+			creator_wei: string;
+			treasury_wei: string;
+		}[];
+		assert.equal(swept.length, 1, 'the indexer recorded the pool fee sweep');
+
+		// a sale takes the fee in ETH, which the agent's own wallet may sweep
+		const sold = await coins.sell(viewer, agent.id, held / 2n);
+		assert.ok(sold.wei > 0n);
+		const treasury = await coins.treasury();
+		const result = await coins.settleFees();
+		assert.deepEqual(result.failed, []);
+		const settled = result.fees.find((f) => f.agentId === agent.id)!;
+		const recorded = db.prepare('SELECT treasury_wei FROM pool_fees').all() as {
+			treasury_wei: string;
+		}[];
+		assert.equal(recorded.length, 2, 'the agent swept its pool itself');
+		const curveShare = (
+			db.prepare('SELECT treasury_wei FROM fee_ledger').all() as { treasury_wei: string }[]
+		).reduce((sum, r) => sum + BigInt(r.treasury_wei), 0n);
+		const poolShare = recorded.reduce((sum, r) => sum + BigInt(r.treasury_wei), 0n);
+		const paid = await client.getTransaction({ hash: settled.tx! });
+		assert.equal(paid.to?.toLowerCase(), treasury.address.toLowerCase());
+		assert.equal(paid.value, curveShare + poolShare, 'musestream got 60% of curve and pool fees');
+		assert.equal(coins.earnings(agent.id).eth.unpaid, 0n);
 	}
 );

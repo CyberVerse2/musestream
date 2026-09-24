@@ -121,7 +121,7 @@
 		</dl>
 
 		{#if tok.graduated}
-			<p class="grad done">Graduated. ${sym} trades on Uniswap now.</p>
+			<p class="grad done">Graduated. ${sym} now trades in its Uniswap pool.</p>
 		{:else}
 			<div class="grad">
 				<div class="grad-row"><span>Graduation</span><b>{tok.graduationPct.toFixed(0)}%</b></div>
@@ -164,10 +164,8 @@
 			</div>
 		{:else}
 			<div class="actions">
-				<button class="btn-lime" disabled={tok.graduated} onclick={() => openBuy(id)}>Buy</button>
-				<button class="btn-quiet" disabled={!held || tok.graduated} onclick={() => (selling = true)}
-					>Sell</button
-				>
+				<button class="btn-lime" onclick={() => openBuy(id)}>Buy</button>
+				<button class="btn-quiet" disabled={!held} onclick={() => (selling = true)}>Sell</button>
 			</div>
 		{/if}
 	{/if}
