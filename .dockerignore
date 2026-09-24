@@ -1,0 +1,12 @@
+.git
+.claude
+node_modules
+.svelte-kit
+build
+data
+coverage
+.env
+.env.*
+!.env.example
+video-worker/.venv
+**/__pycache__

@@ -16,8 +16,9 @@ Robinhood Chain. Confirm each paid or public step with the owner before you do i
   - `ffmpeg`: stand-in video and clip handling.
   - `uv` and Python 3.12 or later: the Reactor video worker. The server spawns
     `uv run --quiet worker.py` in `video-worker/`, which uses `reactor-sdk`.
-- There is no Dockerfile. Openship's build detection, or a new Dockerfile, must install
-  ffmpeg, uv, and Python next to Node.
+- The `Dockerfile` builds all of this into one image: Node 24, ffmpeg, uv, and the worker's
+  Python environment. Deploy with build kind `dockerfile`. Openship's auto-detection reads
+  `video-worker/` as a second app; it is not one, because the web server starts it.
 
 ## Code state: check before you deploy
 
