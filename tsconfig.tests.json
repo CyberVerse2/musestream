@@ -14,5 +14,11 @@
 		"types": ["node"]
 	},
 	"include": ["shared/**/*.ts", "src/lib/server/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
-	"exclude": ["src/lib/server/app.ts", "src/lib/server/market.ts", "src/lib/server/viewer.ts"]
+	"exclude": [
+		"src/lib/server/app.ts",
+		"src/lib/server/market.ts",
+		"src/lib/server/viewer.ts",
+		"src/lib/server/chain/dynamic-wallets.ts",
+		"src/lib/server/session.ts"
+	]
 }

@@ -36,8 +36,13 @@
 		"vite": "^6.2.0"
 	},
 	"dependencies": {
+		"@dynamic-labs-sdk/client": "^1.34.1",
+		"@dynamic-labs-sdk/evm": "^1.34.1",
+		"@dynamic-labs-wallet/core": "^1.1.17",
+		"@dynamic-labs-wallet/node-evm": "^1.1.17",
 		"better-sqlite3": "^13.0.3",
 		"hls.js": "^1.7.3",
+		"jose": "^6.2.12",
 		"phosphor-svelte": "^3.1.0",
 		"viem": "^2.56.8",
 		"zod": "^4.6.5"

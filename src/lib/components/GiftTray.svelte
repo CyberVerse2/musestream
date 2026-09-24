@@ -2,9 +2,8 @@
 	import { onDestroy, onMount } from 'svelte';
 	import type { Agent } from '$lib/data';
 	import { ui } from '$lib/state/ui.svelte';
-	import { refreshWallet, spendableUsd, wallet } from '$lib/state/portfolio.svelte';
+	import { payGift, refreshWallet, spendableUsd, wallet } from '$lib/state/portfolio.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
-	import { sendGift } from '$lib/state/room';
 	import { fmtCash } from '$lib/format';
 	import { viewport } from '$lib/media.svelte';
 	import { dim, slideUp } from '$lib/motion';
@@ -42,11 +41,9 @@
 			showToast('⚠', `Not enough balance for ${gift.name}`);
 			return;
 		}
-		sendGift(agent.streamId, gift.id)
-			.then(() => refreshWallet())
-			.catch((err: unknown) =>
-				showToast('⚠', err instanceof Error ? err.message : 'Gift not sent')
-			);
+		payGift(agent.streamId, gift.id, gift.usd).catch((err: unknown) =>
+			showToast('⚠', err instanceof Error ? err.message : 'Gift not sent')
+		);
 		combo = active?.id === gift.id ? combo + 1 : 1;
 		active = gift;
 		sequence += 1;

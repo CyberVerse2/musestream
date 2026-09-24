@@ -127,6 +127,16 @@ const MIGRATIONS: string[] = [
 		block  INTEGER NOT NULL
 	);
 	ALTER TABLE gifts ADD COLUMN tx TEXT;
+	`,
+	// viewers who signed in with their own wallet (Dynamic)
+	`
+	CREATE TABLE viewer_links (
+		viewer      TEXT PRIMARY KEY,
+		user_id     TEXT NOT NULL,
+		address     TEXT NOT NULL,
+		linked_at   INTEGER NOT NULL
+	);
+	CREATE UNIQUE INDEX gifts_by_tx ON gifts(tx) WHERE tx IS NOT NULL;
 	`
 ];
 

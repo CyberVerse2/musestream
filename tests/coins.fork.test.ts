@@ -10,7 +10,7 @@ import { robinhood } from 'viem/chains';
 import { openDb } from '../src/lib/server/db.ts';
 import { Lurkk } from '../src/lib/server/service.ts';
 import { Coins } from '../src/lib/server/chain/coins.ts';
-import { LocalWallets, Wallets } from '../src/lib/server/chain/wallets.ts';
+import { LocalWallets, Sealer, Wallets } from '../src/lib/server/chain/wallets.ts';
 import type { VideoProvider } from '../src/lib/server/video/provider.ts';
 
 const RPC = process.env.LURKK_FORK_RPC;
@@ -28,7 +28,7 @@ test(
 		const db = openDb(':memory:');
 		const lurkk = new Lurkk(db, video);
 		const client = createPublicClient({ chain: robinhood, transport: http(RPC) });
-		const wallets = new Wallets(db, new LocalWallets(randomBytes(32)));
+		const wallets = new Wallets(db, new LocalWallets(new Sealer(randomBytes(32))));
 		const coins = new Coins({ db, hub: lurkk.hub, wallets, client, rpcUrl: RPC!, devFork: true });
 
 		const handle = `t${randomBytes(3).toString('hex')}`;
@@ -77,5 +77,69 @@ test(
 			'the agent got exactly what it was owed'
 		);
 		assert.equal(coins.earnings(agent.id).unpaid, 0n);
+	}
+);
+
+test(
+	'a viewer wallet can trade with the shared transactions, and sell quotes match the chain',
+	{ skip: !RPC },
+	async () => {
+		const { sellQuote, withSlippage } = await import('../shared/curve.ts');
+		const { buyTx, approveTx, sellTx } = await import('../shared/tx.ts');
+		const { createWalletClient } = await import('viem');
+		const { privateKeyToAccount, generatePrivateKey } = await import('viem/accounts');
+		const { curveAbi } = await import('../src/lib/server/chain/abi.ts');
+
+		const db = openDb(':memory:');
+		const lurkk = new Lurkk(db, video);
+		const client = createPublicClient({ chain: robinhood, transport: http(RPC) });
+		const wallets = new Wallets(db, new LocalWallets(new Sealer(randomBytes(32))));
+		const coins = new Coins({ db, hub: lurkk.hub, wallets, client, rpcUrl: RPC!, devFork: true });
+		const { agent } = lurkk.registerAgent({
+			handle: `v${randomBytes(3).toString('hex')}`,
+			name: 'V',
+			operator: 'o',
+			category: 'Talk'
+		});
+		const coin = await coins.launch(agent);
+		await client.request({ method: 'evm_increaseTime' as never, params: [60] as never });
+		await client.request({ method: 'evm_mine' as never, params: [] as never });
+
+		// a wallet the server knows nothing about, like a viewer's Dynamic wallet
+		const account = privateKeyToAccount(generatePrivateKey());
+		await coins.topUp(account.address, parseEther('1'));
+		const wallet = createWalletClient({ account, chain: robinhood, transport: http(RPC) });
+		const send = async (tx: { to: `0x${string}`; data?: `0x${string}`; value?: bigint }) => {
+			const hash = await wallet.sendTransaction(tx);
+			const r = await client.waitForTransactionReceipt({ hash });
+			assert.equal(r.status, 'success');
+		};
+
+		await send(buyTx(coin.curve!, parseEther('0.2'), 1n, account.address));
+		const [held] = await coins.holdings(account.address);
+		assert.ok(held && held.tokens > 0n);
+
+		const [quote, tokens] = await client.readContract({
+			address: coin.curve!,
+			abi: curveAbi,
+			functionName: 'getReserves'
+		});
+		const feeBps = await client.readContract({
+			address: coin.curve!,
+			abi: curveAbi,
+			functionName: 'feeBps'
+		});
+		const expected = sellQuote(held!.tokens, { quote, tokens }, feeBps);
+		const before = await client.getBalance({ address: account.address });
+		await send(approveTx(coin.token!, coin.curve!, held!.tokens));
+		await send(sellTx(coin.curve!, held!.tokens, withSlippage(expected, 100n), account.address));
+		await coins.sync();
+		const sold = coins.recentTrades(agent.id).find((t) => t.side === 'sell')!;
+		assert.equal(
+			BigInt(sold.quote_wei),
+			expected,
+			'the shared sell math matches the contract to the wei'
+		);
+		assert.ok((await client.getBalance({ address: account.address })) > before);
 	}
 );

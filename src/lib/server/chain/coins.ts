@@ -20,6 +20,7 @@ import {
 	type Chain
 } from 'viem';
 import { splitFee } from '../../../../shared/fees.ts';
+import { sellQuote, withSlippage } from '../../../../shared/curve.ts';
 import type { DB } from '../db.ts';
 import type { Hub } from '../hub.ts';
 import type { AgentRow } from '../service.ts';
@@ -523,6 +524,81 @@ export class Coins {
 				`The sale did not go through: ${revertReason(err)}.`
 			);
 		}
+	}
+
+	/* ---------------- quotes for wallets that sign for themselves ---------------- */
+
+	/** what buying for `wei` from `from` returns now, and the least to accept */
+	async quoteBuy(agentId: string, from: Address, wei: bigint) {
+		const coin = this.liveCoin(agentId);
+		try {
+			const { result: expected } = await this.o.client.simulateContract({
+				account: from,
+				address: coin.curve,
+				abi: curveAbi,
+				functionName: 'buy',
+				args: [wei, 0n, from],
+				value: wei,
+				// the quote must not depend on whether the wallet is funded yet
+				stateOverride: [{ address: from, balance: wei + 10n ** 18n }]
+			});
+			return {
+				curve: coin.curve,
+				token: coin.token,
+				expected,
+				minOut: withSlippage(expected, 300n)
+			};
+		} catch (err) {
+			throw new LurkkError(400, 'quote_failed', `No price for this buy: ${revertReason(err)}.`);
+		}
+	}
+
+	/** what selling a fraction of `from`'s tokens returns now, and the least to accept */
+	async quoteSell(agentId: string, from: Address, fraction: 0.25 | 0.5 | 1) {
+		const coin = this.liveCoin(agentId);
+		const [balance, [quote, tokens], feeBps] = await Promise.all([
+			this.o.client.readContract({
+				address: coin.token,
+				abi: erc20Abi,
+				functionName: 'balanceOf',
+				args: [from]
+			}),
+			this.o.client.readContract({
+				address: coin.curve,
+				abi: curveAbi,
+				functionName: 'getReserves'
+			}),
+			this.o.client.readContract({ address: coin.curve, abi: curveAbi, functionName: 'feeBps' })
+		]);
+		const amount = fraction === 1 ? balance : (balance * BigInt(fraction * 100)) / 100n;
+		if (amount === 0n)
+			throw new LurkkError(409, 'nothing_to_sell', 'This wallet holds none of this coin.');
+		const expected = sellQuote(amount, { quote, tokens }, feeBps);
+		return {
+			curve: coin.curve,
+			token: coin.token,
+			tokens: amount,
+			expected,
+			minOut: withSlippage(expected, 300n)
+		};
+	}
+
+	/**
+	 * Check a payment a viewer's own wallet sent: it succeeded, came from `from`, went to
+	 * `to`, and carried at least `minWei`.
+	 */
+	async verifyPayment(tx: Hash, from: Address, to: Address, minWei: bigint) {
+		const [t, receipt] = await Promise.all([
+			this.o.client.getTransaction({ hash: tx }),
+			this.o.client.waitForTransactionReceipt({ hash: tx, timeout: 30_000 })
+		]);
+		const ok =
+			receipt.status === 'success' &&
+			t.from.toLowerCase() === from.toLowerCase() &&
+			t.to?.toLowerCase() === to.toLowerCase() &&
+			t.value >= minWei;
+		if (!ok)
+			throw new LurkkError(400, 'bad_payment', 'That transaction does not pay for this gift.');
 	}
 
 	/** move ETH, e.g. a gift from a viewer to the treasury */

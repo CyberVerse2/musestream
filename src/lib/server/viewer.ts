@@ -2,6 +2,7 @@
 import { coins } from './app.ts';
 import { LurkkError } from './service.ts';
 import type { WalletRow } from './chain/wallets.ts';
+import { linkedAddress } from './session.ts';
 
 /**
  * On a local fork, each viewer gets a server-held wallet with free test ETH.
@@ -9,6 +10,13 @@ import type { WalletRow } from './chain/wallets.ts';
  */
 export async function viewerWallet(viewer: string): Promise<WalletRow> {
 	if (!coins) throw new LurkkError(503, 'no_chain', 'Coins are not available on this server.');
+	if (linkedAddress(viewer)) {
+		throw new LurkkError(
+			409,
+			'own_wallet',
+			'You signed in with your own wallet; it signs your trades.'
+		);
+	}
 	if (!coins.testMoney) {
 		throw new LurkkError(
 			501,

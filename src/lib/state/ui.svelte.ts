@@ -7,7 +7,8 @@ export type SheetState =
 	| { kind: 'buy'; id: string }
 	| { kind: 'token'; id: string }
 	| { kind: 'agent'; id: string }
-	| { kind: 'options'; id: string };
+	| { kind: 'options'; id: string }
+	| { kind: 'signin' };
 
 export const ui = $state({
 	tab: 'live' as Tab,
@@ -36,6 +37,9 @@ export function openAgent(id: string) {
 }
 export function openOptions(id: string) {
 	if (known(id)) ui.sheet = { kind: 'options', id };
+}
+export function openSignIn() {
+	ui.sheet = { kind: 'signin' };
 }
 export function closeSheet() {
 	ui.sheet = null;

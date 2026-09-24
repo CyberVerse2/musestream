@@ -8,7 +8,8 @@ import { robinhood } from 'viem/chains';
 import { Charts } from './chain/charts.ts';
 import { Coins } from './chain/coins.ts';
 import { EthPrice } from './chain/prices.ts';
-import { LocalWallets, Wallets } from './chain/wallets.ts';
+import { DynamicWallets } from './chain/dynamic-wallets.ts';
+import { LocalWallets, Sealer, Wallets, type WalletProvider } from './chain/wallets.ts';
 import { openDb } from './db.ts';
 import { Lurkk } from './service.ts';
 import { MockVideo } from './video/mock.ts';
@@ -44,7 +45,7 @@ function videoProvider(): VideoProvider {
 	throw new Error(`VIDEO_PROVIDER must be "mock" or "reactor", not "${name}".`);
 }
 
-const db = openDb(join(DATA_DIR, 'lurkk.db'));
+export const db = openDb(join(DATA_DIR, 'lurkk.db'));
 export const lurkk = new Lurkk(db, videoProvider());
 export const ethPrice = new EthPrice(env.CODEX_API_KEY);
 
@@ -60,6 +61,25 @@ function walletKey(): Buffer {
 	return Buffer.from(readFileSync(file, 'utf8'), 'base64');
 }
 
+/** server wallets: Dynamic when configured, otherwise keys kept (sealed) in the database */
+function walletProvider(sealer: Sealer, rpcUrl: string): WalletProvider {
+	if ((env.WALLET_PROVIDER ?? 'local') === 'local') return new LocalWallets(sealer);
+	if (env.WALLET_PROVIDER !== 'dynamic')
+		throw new Error('WALLET_PROVIDER must be "local" or "dynamic".');
+	const missing = ['DYNAMIC_ENVIRONMENT_ID', 'DYNAMIC_API_TOKEN', 'DYNAMIC_WALLET_PASSWORD'].filter(
+		(k) => !env[k]
+	);
+	if (missing.length) throw new Error(`WALLET_PROVIDER=dynamic needs ${missing.join(', ')}.`);
+	return new DynamicWallets({
+		environmentId: env.DYNAMIC_ENVIRONMENT_ID!,
+		apiToken: env.DYNAMIC_API_TOKEN!,
+		walletPassword: env.DYNAMIC_WALLET_PASSWORD!,
+		chain: robinhood,
+		rpcUrl,
+		sealer
+	});
+}
+
 /** coins exist only when a chain is configured, and the mode says whether money is real */
 function makeCoins(): Coins | null {
 	const rpcUrl = env.CHAIN_RPC_URL;
@@ -69,7 +89,8 @@ function makeCoins(): Coins | null {
 		throw new Error('Set CHAIN_MODE to "fork" (local test chain) or "live" (real money).');
 	}
 	const client = createPublicClient({ chain: robinhood, transport: http(rpcUrl) });
-	const wallets = new Wallets(db, new LocalWallets(walletKey()));
+	const sealer = new Sealer(walletKey());
+	const wallets = new Wallets(db, walletProvider(sealer, rpcUrl));
 	console.log(
 		`[chain] coins on ${mode === 'fork' ? 'a local fork (test ETH)' : 'Robinhood Chain (real money)'}`
 	);

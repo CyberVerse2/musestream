@@ -50,8 +50,29 @@ export interface CoinDetail {
 	trades: PublicTrade[];
 	holders: { trader: string; tokens: number; pct: number }[];
 }
+export interface AppConfig {
+	chainId: number;
+	rpcUrl: string;
+	treasury: string | null;
+	testMoney: boolean;
+	/** set when viewers can sign in with their own wallet */
+	dynamicEnvironmentId: string | null;
+	signedInAs: string | null;
+}
+export interface Quote {
+	side: 'buy' | 'sell';
+	curve: `0x${string}`;
+	token: `0x${string}`;
+	/** decimal strings; wei for ETH, 18-decimal units for tokens */
+	wei?: string;
+	tokens?: string;
+	expected: string;
+	minOut: string;
+}
 export interface WalletInfo {
 	address: string;
+	/** the viewer signed in and holds the keys; trades are signed in the browser */
+	ownWallet?: boolean;
 	/** a local test chain: the ETH here is not real money */
 	testMoney: boolean;
 	ethUsd: number | null;
@@ -129,6 +150,20 @@ export const api = {
 			}
 		),
 	wallet: () => request<WalletInfo>('/api/wallet'),
+	config: () => request<AppConfig>('/api/config'),
+	signIn: (token: string) =>
+		request<{ address: string }>('/api/session', {
+			method: 'POST',
+			body: JSON.stringify({ token })
+		}),
+	signOut: () => request<{ ok: true }>('/api/session', { method: 'DELETE' }),
+	quote: (
+		handle: string,
+		q: { side: 'buy'; usd: number; from: string } | { side: 'sell'; fraction: number; from: string }
+	) =>
+		request<Quote>(
+			`/api/coins/${handle}/quote?${new URLSearchParams(Object.entries(q).map(([k, v]) => [k, String(v)]))}`
+		),
 	candles: (handle: string, interval: Interval) =>
 		request<{ ethUsd: number | null; source: string; candles: Candle[] }>(
 			`/api/coins/${handle}/candles?interval=${interval}`
@@ -143,10 +178,10 @@ export const api = {
 			method: 'POST',
 			body: JSON.stringify({ count })
 		}),
-	gift: (streamId: string, gift: string) =>
+	gift: (streamId: string, gift: string, tx?: string) =>
 		request<{ message: PublicChat; tx: string | null }>(`/api/streams/${streamId}/gifts`, {
 			method: 'POST',
-			body: JSON.stringify({ gift })
+			body: JSON.stringify(tx ? { gift, tx } : { gift })
 		})
 };
 

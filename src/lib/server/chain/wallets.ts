@@ -26,25 +26,15 @@ export interface WalletProvider {
 }
 
 /**
- * Keys generated here and stored encrypted (AES-256-GCM) in the database.
+ * Encrypts wallet secrets at rest with AES-256-GCM.
  * `key` is 32 bytes; keep it outside the database, in WALLET_ENCRYPTION_KEY.
  */
-export class LocalWallets implements WalletProvider {
-	readonly name = 'local';
+export class Sealer {
 	private key: Buffer;
 
 	constructor(key: Buffer) {
 		if (key.length !== 32) throw new Error('The wallet encryption key must be 32 bytes.');
 		this.key = key;
-	}
-
-	async create() {
-		const pk = generatePrivateKey();
-		return { address: privateKeyToAccount(pk).address, secret: this.seal(pk) };
-	}
-
-	async account(row: WalletRow) {
-		return privateKeyToAccount(this.open(row.secret) as `0x${string}`);
 	}
 
 	seal(plain: string): string {
@@ -64,6 +54,25 @@ export class LocalWallets implements WalletProvider {
 		return Buffer.concat([decipher.update(Buffer.from(body, 'base64')), decipher.final()]).toString(
 			'utf8'
 		);
+	}
+}
+
+/** Keys generated here and stored sealed in the database. Development and forks. */
+export class LocalWallets implements WalletProvider {
+	readonly name = 'local';
+	private sealer: Sealer;
+
+	constructor(sealer: Sealer) {
+		this.sealer = sealer;
+	}
+
+	async create() {
+		const pk = generatePrivateKey();
+		return { address: privateKeyToAccount(pk).address, secret: this.sealer.seal(pk) };
+	}
+
+	async account(row: WalletRow) {
+		return privateKeyToAccount(this.sealer.open(row.secret) as `0x${string}`);
 	}
 }
 

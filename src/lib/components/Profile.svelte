@@ -5,7 +5,9 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { directory } from '$lib/state/directory.svelte';
-	import { ui, watchAgent } from '$lib/state/ui.svelte';
+	import { ui, watchAgent, openSignIn } from '$lib/state/ui.svelte';
+	import { account, canSignIn } from '$lib/state/account.svelte';
+	import { api } from '$lib/api';
 	import { refreshWallet, wallet } from '$lib/state/portfolio.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import WalletMark from './WalletMark.svelte';
@@ -38,6 +40,20 @@
 				<h1 class="page-title">you</h1>
 				{#if address}<p class="addr">{address.slice(0, 6)}…{address.slice(-4)}</p>{/if}
 			</div>
+			{#if canSignIn()}
+				<button class="btn-quiet account" onclick={openSignIn}>Sign in</button>
+			{:else if account.signedInAs}
+				<button
+					class="btn-quiet account"
+					onclick={async () => {
+						await api.signOut();
+						const { signOut } = await import('$lib/wallet/dynamic');
+						await signOut();
+						account.signedInAs = null;
+						await refreshWallet();
+					}}>Sign out</button
+				>
+			{/if}
 		</header>
 
 		<dl class="stats">
@@ -122,6 +138,12 @@
 		align-items: center;
 		gap: 14px;
 		margin-top: 8px;
+	}
+	.account {
+		margin-left: auto;
+		min-height: 36px;
+		padding: 0 14px;
+		font-size: 14px;
 	}
 	.addr {
 		margin-top: 2px;

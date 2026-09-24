@@ -2,7 +2,8 @@
 	import AgentAvatar from './AgentAvatar.svelte';
 	import { onMount } from 'svelte';
 	import { refreshWallet, wallet } from '$lib/state/portfolio.svelte';
-	import { ui, openToken } from '$lib/state/ui.svelte';
+	import { ui, openToken, openSignIn } from '$lib/state/ui.svelte';
+	import { canSignIn } from '$lib/state/account.svelte';
 	import { market } from '$lib/state/market.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import { fmtCash, fmtPct, fmtTok } from '$lib/format';
@@ -104,7 +105,8 @@
 		{:else}
 			<div class="hero">
 				<p class="label">
-					Total balance{#if info.testMoney}<span class="test">test ETH</span>{/if}
+					Total balance{#if info.ownWallet}<span class="test">your wallet</span
+						>{:else if info.testMoney}<span class="test">test ETH</span>{/if}
 				</p>
 				<p class="total">{fmtCash(total)}</p>
 				{#if rows.length && cost > 0}
@@ -125,6 +127,13 @@
 					<div><span>In coins</span><b>{fmtCash(inCoins)}</b></div>
 				</div>
 			</div>
+
+			{#if canSignIn()}
+				<div class="signin">
+					<p>Sign in to trade from a wallet only you control.</p>
+					<button class="btn-lime" onclick={openSignIn}>Sign in with email</button>
+				</div>
+			{/if}
 
 			<h2 class="section-title">Coins <small>{rows.length} held</small></h2>
 			{#if rows.length}
@@ -254,6 +263,17 @@
 	.split small {
 		font-size: 11px;
 		color: var(--mut-2);
+	}
+	.signin {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		margin-top: 16px;
+		padding: 14px;
+		border-radius: var(--r-md);
+		background: var(--surface);
+		font-size: 14px;
+		color: var(--mut);
 	}
 	.test {
 		margin-left: 8px;

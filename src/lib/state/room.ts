@@ -103,7 +103,3 @@ function flushLikes() {
 		}
 	}
 }
-
-export async function sendGift(streamId: string, gift: string) {
-	await api.gift(streamId, gift);
-}
