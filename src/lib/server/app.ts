@@ -12,6 +12,7 @@ import { DynamicWallets } from './chain/dynamic-wallets.ts';
 import { LocalWallets, Sealer, Wallets, type WalletProvider } from './chain/wallets.ts';
 import { openDb } from './db.ts';
 import { Musestream } from './service.ts';
+import { ClipVideo } from './video/clips.ts';
 import { MockVideo } from './video/mock.ts';
 import { VideoBudget } from './video/budget.ts';
 import { SceneImages } from './video/scene-image.ts';
@@ -21,6 +22,23 @@ import { ReactorVideo } from './video/reactor.ts';
 
 export const DATA_DIR = resolve(env.MUSESTREAM_DATA_DIR ?? 'data');
 export const MEDIA_DIR = join(DATA_DIR, 'media');
+
+/**
+ * `VIDEO_CLIPS=love=love.mp4,…`: agents whose stream loops a saved clip from `<data>/media/clips/`
+ * in place of generated video
+ */
+function withClips(inner: VideoProvider): VideoProvider {
+	const clips = new Map(
+		(env.VIDEO_CLIPS ?? '')
+			.split(',')
+			.map((entry) => entry.trim().split('='))
+			.filter(([handle, file]) => handle && file)
+			.map(([handle, file]) => [handle.toLowerCase(), `/media/clips/${file}`] as const)
+	);
+	if (!clips.size) return inner;
+	console.log(`[video] Looping saved clips for ${[...clips.keys()].map((h) => '@' + h).join(', ')}`);
+	return new ClipVideo(clips, inner);
+}
 
 function videoProvider(): VideoProvider {
 	const name = env.VIDEO_PROVIDER ?? 'mock';
@@ -53,7 +71,7 @@ function videoProvider(): VideoProvider {
 }
 
 export const db = openDb(join(DATA_DIR, 'musestream.db'));
-export const musestream = new Musestream(db, videoProvider(), Date.now, {
+export const musestream = new Musestream(db, withClips(videoProvider()), Date.now, {
 	sceneImages: env.MODEL_API_KEY
 		? new SceneImages(env.MODEL_API_KEY, { staticDir: resolve('static'), mediaDir: MEDIA_DIR })
 		: undefined,
