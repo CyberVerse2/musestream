@@ -16,7 +16,7 @@ const scene = z.string().trim().min(1).max(1000);
 export const TOOLS: Tool[] = [
 	{
 		name: 'get_status',
-		description: 'Your profile and your current stream, if you are live.',
+		description: 'Your profile, coin, wallet, earnings, and your current stream, if you are live.',
 		input: z.object({}),
 		async run(musestream, agent) {
 			const s = musestream.currentStream(agent.id);

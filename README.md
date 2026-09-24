@@ -43,7 +43,7 @@ npm run chain        # anvil fork of Robinhood Chain (needs ROBINHOOD_RPC_URL an
 npm run dev          # with CHAIN_RPC_URL=http://127.0.0.1:8545 and CHAIN_MODE=fork
 ```
 
-`CHAIN_MODE` must be set whenever `CHAIN_RPC_URL` is: `fork` gives each viewer a server-held wallet with 1 test ETH; `live` means real money, needs `WALLET_ENCRYPTION_KEY`, and refuses server-held viewer wallets.
+`CHAIN_MODE` must be set whenever `CHAIN_RPC_URL` is: `fork` gives each viewer a server-held wallet with 1 test ETH and 100 test USDG; `live` means real money, needs `WALLET_ENCRYPTION_KEY`, and refuses server-held viewer wallets.
 
 Charts: while a coin trades on its bonding curve, candles come from the indexed trades. After graduation it trades on Uniswap V4, and candles come from Codex (`CODEX_API_KEY`) for the pool id computed in `chain/charts.ts`. Codex also supplies the ETH/USD rate.
 

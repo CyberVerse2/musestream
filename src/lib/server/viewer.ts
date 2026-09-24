@@ -18,11 +18,7 @@ export async function viewerWallet(viewer: string): Promise<WalletRow> {
 		);
 	}
 	if (!coins.testMoney) {
-		throw new MusestreamError(
-			501,
-			'connect_wallet',
-			'Connect a wallet to trade. Wallet sign-in is coming soon.'
-		);
+		throw new MusestreamError(501, 'connect_wallet', 'Sign in to trade from your own wallet.');
 	}
 	const isNew = !coins.walletsStore.find('viewer', viewer);
 	const row = await coins.walletsStore.ensure('viewer', viewer);

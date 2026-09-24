@@ -133,7 +133,7 @@ export class Coins {
 		return this.o.wallets;
 	}
 
-	/** true on a local fork, where wallets get free test ETH */
+	/** true on a local fork, where wallets get free test ETH and USDG */
 	get testMoney(): boolean {
 		return this.o.devFork;
 	}
