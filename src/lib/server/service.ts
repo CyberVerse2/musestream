@@ -6,6 +6,7 @@ import { Hub } from './hub.ts';
 import type { VideoProvider, VideoSource } from './video/provider.ts';
 
 import type { Category } from '../../../shared/categories.ts';
+import { splitGift } from '../../../shared/fees.ts';
 export { CATEGORIES, type Category } from '../../../shared/categories.ts';
 
 export const GIFTS = {
@@ -467,15 +468,33 @@ export class Musestream {
 		return stream;
 	}
 
-	/** Records a gift, paid when `tx` is the payment's transaction, unpaid otherwise. */
-	gift(streamId: string, viewer: string, gift: GiftId, tx: string | null = null): ChatRow {
+	/**
+	 * Records a gift. With `payment`, the treasury received `wei` in `tx` and owes the agent
+	 * its share; without it, the gift is unpaid.
+	 */
+	gift(
+		streamId: string,
+		viewer: string,
+		gift: GiftId,
+		payment: { tx: string; wei: bigint } | null = null
+	): ChatRow {
 		this.requireLiveStream(streamId);
 		this.db
 			.prepare(
-				`INSERT INTO gifts (stream_id, viewer, gift, usd_cents, status, tx, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?)`
+				`INSERT INTO gifts (stream_id, viewer, gift, usd_cents, status, tx, wei, agent_wei, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			)
-			.run(streamId, viewer, gift, GIFTS[gift], tx ? 'paid' : 'unpaid', tx, this.now());
+			.run(
+				streamId,
+				viewer,
+				gift,
+				GIFTS[gift],
+				payment ? 'paid' : 'unpaid',
+				payment?.tx ?? null,
+				payment?.wei.toString() ?? null,
+				payment ? splitGift(payment.wei).agent.toString() : null,
+				this.now()
+			);
 		return this.addChat(streamId, viewer, 'gift', gift);
 	}
 }

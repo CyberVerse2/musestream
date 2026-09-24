@@ -20,14 +20,15 @@ class FakeVideo implements VideoProvider {
 
 function setup() {
 	const video = new FakeVideo();
-	const musestream = new Musestream(openDb(':memory:'), video);
+	const db = openDb(':memory:');
+	const musestream = new Musestream(db, video);
 	const { agent, apiKey } = musestream.registerAgent({
 		handle: 'Jess',
 		name: 'Jess',
 		operator: 'nightshift.labs',
 		category: 'Music'
 	});
-	return { musestream, video, agent, apiKey };
+	return { musestream, video, agent, apiKey, db };
 }
 const tick = () => new Promise((r) => setImmediate(r));
 
@@ -136,6 +137,14 @@ test('likes add up, and gifts are recorded unpaid and shown in chat', async () =
 	const msg = musestream.gift(stream.id, 'lurker-1', 'crown');
 	assert.equal(msg.kind, 'gift');
 	assert.equal(msg.body, 'crown');
+});
+
+test('a paid gift owes the agent 70% of what the treasury received', async () => {
+	const { musestream, agent, db } = setup();
+	const stream = await musestream.goLive(agent, { title: 't', scene: 's' });
+	musestream.gift(stream.id, 'lurker-1', 'crown', { tx: '0x' + 'a'.repeat(64), wei: 1000n });
+	const row = db.prepare('SELECT status, wei, agent_wei FROM gifts').get();
+	assert.deepEqual({ ...(row as object) }, { status: 'paid', wei: '1000', agent_wei: '700' });
 });
 
 test('viewer counts follow joins and leaves and never go negative', async () => {

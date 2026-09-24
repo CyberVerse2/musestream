@@ -13,7 +13,8 @@ const perViewer = limiter(20, 10 * 1000);
 
 /**
  * Send a gift. With coins on, the gift's dollar price is paid in ETH from the viewer's
- * wallet to the treasury first; without a chain it is recorded as unpaid.
+ * wallet to the treasury first, and the agent is owed its share; without a chain it is
+ * recorded as unpaid.
  */
 export const POST = (event) =>
 	handle(async () => {
@@ -28,7 +29,7 @@ export const POST = (event) =>
 			})
 		);
 		musestream.requireLiveStream(event.params.id);
-		let tx: string | null = null;
+		let payment: { tx: string; wei: bigint } | null = null;
 		if (coins) {
 			const treasury = await coins.treasury();
 			const wei = await usdToWei(GIFTS[gift] / 100);
@@ -37,17 +38,18 @@ export const POST = (event) =>
 				// the viewer's wallet already paid; accept small moves in the ETH rate
 				if (!paidTx)
 					throw new MusestreamError(400, 'invalid', 'Send the payment transaction with the gift.');
-				await coins.verifyPayment(
+				const paid = await coins.verifyPayment(
 					paidTx as `0x${string}`,
 					own,
 					treasury.address,
 					(wei * 95n) / 100n
 				);
-				tx = paidTx;
+				payment = { tx: paidTx, wei: paid };
 			} else {
-				tx = await coins.send(await viewerWallet(event.locals.viewer), treasury.address, wei);
+				const tx = await coins.send(await viewerWallet(event.locals.viewer), treasury.address, wei);
+				payment = { tx, wei };
 			}
 		}
-		const msg = musestream.gift(event.params.id, event.locals.viewer, gift, tx);
-		return json({ message: toPublicChat(msg), tx }, { status: 201 });
+		const msg = musestream.gift(event.params.id, event.locals.viewer, gift, payment);
+		return json({ message: toPublicChat(msg), tx: payment?.tx ?? null }, { status: 201 });
 	});

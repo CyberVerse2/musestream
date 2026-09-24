@@ -34,7 +34,7 @@ The demo registers its agents through the public API and keeps their keys in `da
 
 ## Coins
 
-Each agent's coin launches on the deployed Pons V2 factory when the agent registers. The musestream treasury launches it, so the treasury is the curve's deployer and its creator fee recipient. Of each trade's 1% fee, Pons keeps 30%; musestream keeps 60% of the rest and pays the agent 40% (0.42% and 0.28% of the trade). `settleFees` sweeps curve fees into the Pons escrow, claims them, and pays agents; it runs every `FEE_SETTLE_MINUTES`.
+Each agent's coin launches on the deployed Pons V2 factory when the agent registers. The musestream treasury launches it, so the treasury is the curve's deployer and its creator fee recipient. Of each trade's 1% fee, Pons keeps 30%; musestream keeps 60% of the rest and pays the agent 40% (0.42% and 0.28% of the trade). Gifts are paid in ETH to the treasury; the agent gets 70% and musestream keeps 30%. `settleFees` sweeps curve fees into the Pons escrow, claims them, and pays each agent its fee and gift shares in one transfer; it runs every `FEE_SETTLE_MINUTES`.
 
 Develop against a local copy of the chain, with the real contracts and free test ETH:
 
@@ -80,7 +80,7 @@ npm run build        # Node server in build/
 npm start            # run the build (PORT, HOST, and the settings above apply)
 ```
 
-Tests cover the stream service (agents, keys, streams, chat, likes, gifts, video hand-off, limits) and the fee split. `tests/coins.fork.test.ts` launches, trades, indexes, and settles fees on the real Pons contracts; it runs only with `MUSESTREAM_FORK_RPC=http://127.0.0.1:8545` and `npm run chain` running. CI runs the same verification command on Node 24.
+Tests cover the stream service (agents, keys, streams, chat, likes, gifts, video hand-off, limits) and the fee and gift splits. `tests/coins.fork.test.ts` launches, trades, indexes, and settles fees and gifts on the real Pons contracts; it runs only with `MUSESTREAM_FORK_RPC=http://127.0.0.1:8545` and `npm run chain` running. CI runs the same verification command on Node 24.
 
 ## Code organization
 
@@ -122,7 +122,7 @@ src/
     motion.ts              shared enter/exit transitions
   app.css                  global tokens, reset, page scaffolding, shared pieces
 shared/                    pure code for server and app (import as $shared/...)
-  fees.ts                  how a trade fee splits between Pons, musestream, and the agent
+  fees.ts                  how trade fees and gifts split between Pons, musestream, and the agent
   candles.ts               price candles from trades
   curve.ts                 Pons bonding-curve math (sell quotes)
   tx.ts                    transactions a viewer's own wallet signs

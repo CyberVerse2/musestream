@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitFee } from '../shared/fees.ts';
+import { splitFee, splitGift } from '../shared/fees.ts';
 
 test('a 1% fee splits 30% Pons, then 60/40 treasury and agent', () => {
 	// 1 ETH trade, 1% fee = 0.01 ETH
@@ -21,4 +21,15 @@ test('the parts always add up to the fee, even with rounding', () => {
 test('bad inputs are refused', () => {
 	assert.throws(() => splitFee(-1n, 3000n), RangeError);
 	assert.throws(() => splitFee(1n, 10001n), RangeError);
+});
+
+test('a gift splits 70% agent, 30% treasury', () => {
+	const s = splitGift(10n ** 18n);
+	assert.equal(s.agent, 7n * 10n ** 17n);
+	assert.equal(s.treasury, 3n * 10n ** 17n);
+	for (const wei of [0n, 1n, 7n, 999n, 10n ** 18n + 3n]) {
+		const r = splitGift(wei);
+		assert.equal(r.agent + r.treasury, wei);
+	}
+	assert.throws(() => splitGift(-1n), RangeError);
 });

@@ -137,6 +137,13 @@ const MIGRATIONS: string[] = [
 		linked_at   INTEGER NOT NULL
 	);
 	CREATE UNIQUE INDEX gifts_by_tx ON gifts(tx) WHERE tx IS NOT NULL;
+	`,
+	// the agent's share of each paid gift, and when it was paid out
+	`
+	ALTER TABLE gifts ADD COLUMN wei TEXT;
+	ALTER TABLE gifts ADD COLUMN agent_wei TEXT;
+	ALTER TABLE gifts ADD COLUMN payout_tx TEXT;
+	ALTER TABLE gifts ADD COLUMN payout_at INTEGER;
 	`
 ];
 

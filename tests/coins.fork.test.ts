@@ -22,7 +22,7 @@ const video: VideoProvider = {
 };
 
 test(
-	'launch, buy, sell, index, and settle fees on the real Pons contracts',
+	'launch, buy, sell, index, and settle fees and gifts on the real Pons contracts',
 	{ skip: !RPC },
 	async () => {
 		const db = openDb(':memory:');
@@ -71,8 +71,16 @@ test(
 		assert.deepEqual(trades.map((t) => t.side).sort(), ['buy', 'sell']);
 		assert.equal(coins.view(agent.id)!.holders, 1);
 
+		const fees = coins.earnings(agent.id).unpaid;
+		assert.ok(fees > 0n, 'trades owe the agent part of the fee');
+
+		const stream = await musestream.goLive(agent, { title: 't', scene: 's' });
+		const treasury = await coins.treasury();
+		const giftWei = parseEther('0.01');
+		const giftTx = await coins.send(viewer, treasury.address, giftWei);
+		musestream.gift(stream.id, viewer.owner_id, 'crown', { tx: giftTx, wei: giftWei });
 		const owed = coins.earnings(agent.id);
-		assert.ok(owed.unpaid > 0n, 'trades owe the agent part of the fee');
+		assert.equal(owed.unpaid, fees + (giftWei * 7n) / 10n, 'a gift owes the agent 70%');
 
 		const result = await coins.settleFees();
 		assert.ok(result.swept >= 1, 'fees moved from the curve to the escrow');

@@ -2,7 +2,8 @@
 //
 // The musestream treasury launches every coin. That makes it the curve's deployer, so it may
 // sweep fees, and it is the creator fee recipient, so fees land in its escrow balance.
-// musestream then owes each agent 40% of the creator share and pays it out in `settleFees`.
+// musestream then owes each agent 40% of the creator share, and 70% of the gifts it receives,
+// and pays both out in `settleFees`.
 import { randomBytes } from 'node:crypto';
 import {
 	BaseError,
@@ -593,9 +594,9 @@ export class Coins {
 
 	/**
 	 * Check a payment a viewer's own wallet sent: it succeeded, came from `from`, went to
-	 * `to`, and carried at least `minWei`.
+	 * `to`, and carried at least `minWei`. Returns the amount it carried.
 	 */
-	async verifyPayment(tx: Hash, from: Address, to: Address, minWei: bigint) {
+	async verifyPayment(tx: Hash, from: Address, to: Address, minWei: bigint): Promise<bigint> {
 		const [t, receipt] = await Promise.all([
 			this.o.client.getTransaction({ hash: tx }),
 			this.o.client.waitForTransactionReceipt({ hash: tx, timeout: 30_000 })
@@ -607,6 +608,7 @@ export class Coins {
 			t.value >= minWei;
 		if (!ok)
 			throw new MusestreamError(400, 'bad_payment', 'That transaction does not pay for this gift.');
+		return t.value;
 	}
 
 	/** move ETH, e.g. a gift from a viewer to the treasury */
@@ -756,7 +758,8 @@ export class Coins {
 
 	/**
 	 * Move fees out of every curve into the escrow, claim the treasury's balance, and pay
-	 * each agent what it is owed. Returns what happened, for logs.
+	 * each agent what it is owed from fees and gifts, in one transfer. Returns what happened,
+	 * for logs.
 	 */
 	async settleFees() {
 		const treasury = await this.treasury();
@@ -810,40 +813,66 @@ export class Coins {
 			});
 			await this.confirm(hash);
 		}
-		const owed = this.o.db
-			.prepare(
-				`SELECT agent_id, GROUP_CONCAT(id) AS ids, GROUP_CONCAT(agent_wei) AS amounts
-				 FROM fee_ledger WHERE paid_at IS NULL GROUP BY agent_id`
-			)
-			.all() as { agent_id: string; ids: string; amounts: string }[];
+		const owed = new Map<string, { fees: number[]; gifts: number[]; wei: bigint }>();
+		for (const r of this.shares()) {
+			if (r.paid_at) continue;
+			const o = owed.get(r.agent_id) ?? { fees: [], gifts: [], wei: 0n };
+			o[r.source].push(r.id);
+			o.wei += BigInt(r.agent_wei);
+			owed.set(r.agent_id, o);
+		}
 		const paid: { agentId: string; wei: bigint; tx: Hash }[] = [];
-		for (const row of owed) {
-			const wei = row.amounts.split(',').reduce((s, v) => s + BigInt(v), 0n);
-			if (wei < PAYOUT_MIN_WEI) continue;
-			const agentWallet = await this.o.wallets.ensure('agent', row.agent_id);
-			const tx = await this.sendNow(treasury, agentWallet.address, wei);
-			const ids = row.ids.split(',').map(Number);
-			this.o.db
-				.prepare(
-					`UPDATE fee_ledger SET payout_tx = ?, paid_at = ? WHERE id IN (${ids.map(() => '?').join(',')})`
-				)
-				.run(tx, this.o.now(), ...ids);
-			paid.push({ agentId: row.agent_id, wei, tx });
+		for (const [agentId, o] of owed) {
+			if (o.wei < PAYOUT_MIN_WEI) continue;
+			const agentWallet = await this.o.wallets.ensure('agent', agentId);
+			const tx = await this.sendNow(treasury, agentWallet.address, o.wei);
+			const at = this.o.now();
+			const markPaid = (table: 'fee_ledger' | 'gifts', atColumn: string, ids: number[]) => {
+				if (!ids.length) return;
+				this.o.db
+					.prepare(
+						`UPDATE ${table} SET payout_tx = ?, ${atColumn} = ? WHERE id IN (${ids.map(() => '?').join(',')})`
+					)
+					.run(tx, at, ...ids);
+			};
+			this.o.db.transaction(() => {
+				markPaid('fee_ledger', 'paid_at', o.fees);
+				markPaid('gifts', 'payout_at', o.gifts);
+			})();
+			paid.push({ agentId, wei: o.wei, tx });
 		}
 		return { swept, claimedWei: claimable, paid };
 	}
 
-	/** what an agent has earned, paid and unpaid, in wei */
+	/** what an agent has earned from trade fees and gifts, paid and unpaid, in wei */
 	earnings(agentId: string) {
-		const rows = this.o.db
-			.prepare('SELECT agent_wei, paid_at FROM fee_ledger WHERE agent_id = ?')
-			.all(agentId) as { agent_wei: string; paid_at: number | null }[];
 		let paid = 0n;
 		let unpaid = 0n;
-		for (const r of rows) {
+		for (const r of this.shares(agentId)) {
 			if (r.paid_at) paid += BigInt(r.agent_wei);
 			else unpaid += BigInt(r.agent_wei);
 		}
 		return { paid, unpaid };
+	}
+
+	/** the agent's share of every trade fee and paid gift, for one agent or all of them */
+	private shares(agentId: string | null = null) {
+		return this.o.db
+			.prepare(
+				`SELECT * FROM (
+				   SELECT 'fees' AS source, id, agent_id, agent_wei, paid_at FROM fee_ledger
+				   UNION ALL
+				   SELECT 'gifts', g.id, s.agent_id, g.agent_wei, g.payout_at
+				   FROM gifts g JOIN streams s ON s.id = g.stream_id
+				   WHERE g.agent_wei IS NOT NULL
+				 ) WHERE @agent IS NULL OR agent_id = @agent`
+			)
+			.all({ agent: agentId }) as {
+			source: 'fees' | 'gifts';
+			id: number;
+			agent_id: string;
+			agent_wei: string;
+			paid_at: number | null;
+		}[];
 	}
 }
