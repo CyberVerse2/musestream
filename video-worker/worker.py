@@ -26,6 +26,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -85,18 +86,19 @@ class HlsWriter:
                 self.proc.kill()
 
 
-async def read_commands(queue: asyncio.Queue) -> None:
-    """Forward stdin lines to the queue; closed stdin means stop."""
-    loop = asyncio.get_running_loop()
-    while True:
-        line = await loop.run_in_executor(None, sys.stdin.readline)
-        if not line:
-            await queue.put({"stop": True, "reason": "server_gone"})
-            return
+def read_commands(loop: asyncio.AbstractEventLoop, queue: asyncio.Queue) -> None:
+    """Forward stdin lines to the queue; closed stdin means stop.
+
+    Runs on a daemon thread: a blocked read must not keep the process alive once the
+    session has ended.
+    """
+    for line in sys.stdin:
         try:
-            await queue.put(json.loads(line))
+            msg = json.loads(line)
         except json.JSONDecodeError:
             continue
+        loop.call_soon_threadsafe(queue.put_nowait, msg)
+    loop.call_soon_threadsafe(queue.put_nowait, {"stop": True, "reason": "server_gone"})
 
 
 async def run(args: argparse.Namespace) -> None:
@@ -134,7 +136,7 @@ async def run(args: argparse.Namespace) -> None:
         await reactor.send_command("set_prompt", {"prompt": args.prompt})
         await reactor.send_command("start", {})
 
-        asyncio.create_task(read_commands(queue))
+        threading.Thread(target=read_commands, args=(loop, queue), daemon=True).start()
         announced = False
         deadline = started + args.max_seconds
         while True:

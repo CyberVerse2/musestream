@@ -106,6 +106,21 @@ export class ReactorVideo implements VideoProvider {
 		const session: Session = { proc, source, killTimer, lastPrompt: prompt, stream };
 		this.sessions.set(stream.streamId, session);
 
+		// runs once, on the worker's "ended" report or on its exit, whichever comes first
+		let finished = false;
+		const finish = () => {
+			if (finished) return;
+			finished = true;
+			clearTimeout(killTimer);
+			this.sessions.delete(stream.streamId);
+			rejectSource(new Error('Reactor session ended before video was ready'));
+			// the paid picture is gone; keep the stream moving with the free clip
+			this.opts.fallback
+				.render(stream, session.lastPrompt)
+				.then((clip) => this.listener?.(stream.streamId, clip))
+				.catch(() => {});
+		};
+
 		createInterface({ input: proc.stdout! }).on('line', (line) => {
 			let msg: { event?: string; reason?: string; seconds?: number };
 			try {
@@ -118,19 +133,11 @@ export class ReactorVideo implements VideoProvider {
 				console.log(
 					`[reactor] session for @${stream.handle} ended: ${msg.reason}, ${msg.seconds}s`
 				);
+				finish();
 			}
 		});
 
-		proc.on('exit', () => {
-			clearTimeout(killTimer);
-			this.sessions.delete(stream.streamId);
-			rejectSource(new Error('Reactor session ended before video was ready'));
-			// the paid picture is gone; keep the stream moving with the free clip
-			this.opts.fallback
-				.render(stream, session.lastPrompt)
-				.then((clip) => this.listener?.(stream.streamId, clip))
-				.catch(() => {});
-		});
+		proc.on('exit', finish);
 
 		return source.catch(() => this.opts.fallback.render(stream, prompt));
 	}

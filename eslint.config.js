@@ -5,7 +5,7 @@ import globals from 'globals';
 import svelteConfig from './svelte.config.js';
 
 export default ts.config(
-	{ ignores: ['node_modules/**', '.svelte-kit/**', 'build/**', '**/data/*.json'] },
+	{ ignores: ['node_modules/**', '.svelte-kit/**', 'build/**', 'data/**', 'video-worker/**'] },
 	js.configs.recommended,
 	...ts.configs.recommended,
 	...svelte.configs['flat/recommended'],
