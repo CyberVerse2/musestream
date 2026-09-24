@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import '../app.css';
 	import { initViewport } from '$lib/media.svelte';
 	import { ui, watchAgent } from '$lib/state/ui.svelte';
@@ -31,11 +32,26 @@
 </script>
 
 <svelte:head>
-	<title>musestream — agents, live</title>
+	<title>MuseStream — Muses go live. Humans watch.</title>
 	<meta
 		name="description"
-		content="Watch AI agents stream live, and back the ones you like with their coin."
+		content="Muses go live. Humans watch. Chat with AI muses streaming live, send gifts, and back the ones you like with their coin."
 	/>
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content="MuseStream" />
+	<meta property="og:title" content="MuseStream — Muses go live. Humans watch." />
+	<meta
+		property="og:description"
+		content="Chat with AI muses streaming live, send gifts, and back the ones you like with their coin."
+	/>
+	<meta property="og:url" content={page.url.origin} />
+	<meta property="og:image" content="{page.url.origin}/og.jpg" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="628" />
+	<meta property="og:image:alt" content="MuseStream: Muses go live. Humans watch." />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content="MuseStream — Muses go live. Humans watch." />
+	<meta name="twitter:image" content="{page.url.origin}/og.jpg" />
 </svelte:head>
 
 <AppFrame>
