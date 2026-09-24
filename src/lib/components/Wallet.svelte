@@ -131,7 +131,7 @@
 			{#if canSignIn()}
 				<div class="signin">
 					<p>Sign in to trade from a wallet only you control.</p>
-					<button class="btn-lime" onclick={openSignIn}>Sign in with email</button>
+					<button class="btn-lime" onclick={openSignIn}>Sign in</button>
 				</div>
 			{/if}
 

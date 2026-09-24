@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Sign in with email: Dynamic sends a code, and the viewer gets a wallet only they control.
+	// Sign in with Google or email; either way the viewer gets a wallet only they control.
 	import Sheet from './Sheet.svelte';
 	import { api } from '$lib/api';
 	import { account } from '$lib/state/account.svelte';
@@ -35,6 +35,15 @@
 			step = 'code';
 		});
 
+	const google = () =>
+		run(async () => {
+			const cfg = account.config!;
+			const dynamic = await import('$lib/wallet/dynamic');
+			await dynamic.initDynamic(cfg.dynamicEnvironmentId!, cfg.chainId);
+			// leaves the page; the sign-in finishes when Google sends the viewer back
+			await dynamic.signInWithGoogle();
+		});
+
 	const verify = () =>
 		run(async () => {
 			const dynamic = await import('$lib/wallet/dynamic');
@@ -50,7 +59,9 @@
 <Sheet label="Sign in" onclose={closeSheet}>
 	<h2>Sign in</h2>
 	{#if step === 'email'}
-		<p class="lede">We email you a code. Signing in creates a wallet that only you control.</p>
+		<p class="lede">Signing in creates a wallet that only you control.</p>
+		<button class="btn-quiet google" disabled={busy} onclick={google}>Continue with Google</button>
+		<p class="or">or get a code by email</p>
 		<form
 			onsubmit={(e) => {
 				e.preventDefault();
@@ -109,7 +120,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		margin-top: 16px;
+		margin-top: 10px;
 	}
 	input {
 		height: 48px;
@@ -119,6 +130,16 @@
 		background: var(--surface-2);
 		/* 16px keeps iOS Safari from zooming the page on focus */
 		font-size: 16px;
+	}
+	.google {
+		width: 100%;
+		margin-top: 16px;
+	}
+	.or {
+		margin-top: 16px;
+		font-size: 13px;
+		color: var(--mut);
+		text-align: center;
 	}
 	.link {
 		font-size: 14px;

@@ -1,5 +1,6 @@
 // Who the viewer is: anonymous (server-held test wallet) or signed in with their own wallet.
 import { api, type AppConfig } from '../api';
+import { showToast } from './notifications.svelte';
 
 export const account = $state({
 	config: null as AppConfig | null,
@@ -12,9 +13,17 @@ export async function loadAccount() {
 		const config = await api.config();
 		account.config = config;
 		account.signedInAs = config.signedInAs;
-		if (config.dynamicEnvironmentId && config.signedInAs) {
-			const { initDynamic } = await import('../wallet/dynamic');
-			await initDynamic(config.dynamicEnvironmentId, config.chainId);
+		if (!config.dynamicEnvironmentId) return;
+		const returning = /[?&](code|state|dynamicOauth)/i.test(window.location.search);
+		if (!config.signedInAs && !returning) return;
+		const dynamic = await import('../wallet/dynamic');
+		await dynamic.initDynamic(config.dynamicEnvironmentId, config.chainId);
+		// back from Google: finish the sign-in and link the wallet
+		const token = await dynamic.finishRedirect();
+		if (token) {
+			const { address } = await api.signIn(token);
+			account.signedInAs = address;
+			showToast('✓', 'Signed in. Your wallet is ready.');
 		}
 	} catch {
 		// the app works without it; trades fall back to what the server offers
