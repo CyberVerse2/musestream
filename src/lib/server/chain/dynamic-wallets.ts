@@ -1,9 +1,6 @@
 // Dynamic server wallets (MPC). Dynamic holds one key share; musestream stores the other,
 // with the wallet metadata, sealed in the wallets table. Neither side can sign alone.
-//
-// Not yet run against a real Dynamic environment. Before relying on it, check:
-// - that `externalServerKeyShares` survive the JSON round trip below, and
-// - whether Robinhood Chain (4663) must be enabled in the Dynamic dashboard.
+// Signing is slow next to local keys: about 3 seconds per transaction, 6 to 11 to create a wallet.
 import type { Account, Chain } from 'viem';
 import type { Sealer, WalletProvider, WalletRow } from './wallets.ts';
 
