@@ -1,8 +1,8 @@
 // canvas sparkline — dpr aware, skips zero-size canvases
 
 /* canvas cannot read CSS variables; these match --up and --down in app.css */
-export const UP = '#48d597';
-export const DOWN = '#ff5a6e';
+export const UP = '#00fdff';
+export const DOWN = '#fc1951';
 export function trendColor(delta: number): string {
 	return delta >= 0 ? UP : DOWN;
 }

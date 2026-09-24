@@ -44,7 +44,7 @@
 				<dd>{held ? fmtUsd(held.tokens * tok.price) : '—'}</dd>
 			</div>
 		</dl>
-		<button class="btn-lime" onclick={() => openBuy(agent.id)}>Buy ${sym}</button>
+		<button class="btn-money" onclick={() => openBuy(agent.id)}>Buy ${sym}</button>
 	</section>
 {/if}
 

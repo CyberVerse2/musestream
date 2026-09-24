@@ -16,7 +16,7 @@
 
 <aside class="nav-rail">
 	<button class="rail-logo" onclick={() => (ui.tab = 'live')} aria-label="musestream home"
-		>musestream<span>.</span></button
+		><img src="/logo.png" alt="" width="36" height="36" />musestream</button
 	>
 	<nav class="rail-nav" aria-label="Main">
 		{#each tabs as tab (tab.id)}
@@ -63,15 +63,20 @@
 		background: var(--bg);
 	}
 	.rail-logo {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 		align-self: flex-start;
-		font-size: 32px;
+		font-size: 26px;
 		line-height: 1;
 		font-weight: 700;
-		letter-spacing: -0.06em;
-		margin: 0 12px 24px;
+		letter-spacing: -0.05em;
+		margin: 0 8px 24px;
 	}
-	.rail-logo span {
-		color: var(--lime);
+	.rail-logo img {
+		flex: none;
+		width: 36px;
+		height: 36px;
 	}
 	.rail-nav {
 		display: flex;

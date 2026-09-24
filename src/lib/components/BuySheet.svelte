@@ -89,9 +89,9 @@
 
 		{#if error}<p class="error" role="alert">{error}</p>{/if}
 		{#if short && wallet.info?.ownWallet}
-			<button class="btn-lime confirm" onclick={openReceive}>Add money to buy</button>
+			<button class="btn-money confirm" onclick={openReceive}>Add money to buy</button>
 		{:else}
-			<button class="btn-lime confirm" disabled={short || busy} onclick={confirm}>
+			<button class="btn-money confirm" disabled={short || busy} onclick={confirm}>
 				{busy ? 'Buying…' : short ? 'Not enough balance' : `Buy $${usd} of ${sym}`}
 			</button>
 		{/if}
@@ -194,7 +194,7 @@
 		align-items: center;
 		gap: 8px;
 		padding: 32px 0 16px;
-		color: var(--lime);
+		color: var(--money);
 		text-align: center;
 	}
 	.done :global(svg) {

@@ -161,7 +161,7 @@
 			</div>
 		{:else}
 			<div class="actions">
-				<button class="btn-lime" onclick={() => openBuy(id)}>Buy</button>
+				<button class="btn-money" onclick={() => openBuy(id)}>Buy</button>
 				<button class="btn-quiet" disabled={!held} onclick={() => (selling = true)}>Sell</button>
 			</div>
 		{/if}
@@ -279,14 +279,14 @@
 		font-size: 13px;
 	}
 	.grad.done {
-		color: var(--lime);
+		color: var(--money);
 	}
 	.grad-row {
 		display: flex;
 		justify-content: space-between;
 	}
 	.grad-row b {
-		color: var(--lime);
+		color: var(--money);
 	}
 	.bar {
 		display: block;
@@ -302,7 +302,7 @@
 		margin-top: 12px;
 		padding: 12px;
 		border-radius: var(--r-md);
-		background: var(--lime-soft);
+		background: var(--money-soft);
 		font-size: 13px;
 	}
 	.position b {

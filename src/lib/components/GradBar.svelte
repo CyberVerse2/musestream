@@ -21,7 +21,7 @@
 		display: block;
 		height: 100%;
 		border-radius: inherit;
-		background: var(--lime);
+		background: var(--money);
 		transform-origin: left;
 		transition: transform 600ms var(--ease-in-out);
 	}

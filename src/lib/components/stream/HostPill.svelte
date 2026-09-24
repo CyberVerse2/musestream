@@ -62,7 +62,7 @@
 		flex: none;
 		padding: 2px;
 		border-radius: 50%;
-		background: conic-gradient(var(--live), #ff8ab3, var(--live));
+		background: conic-gradient(var(--live), var(--money), var(--live));
 	}
 	.ring :global(img),
 	.ring :global(.mark) {

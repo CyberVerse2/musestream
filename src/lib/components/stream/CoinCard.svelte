@@ -128,8 +128,8 @@
 		flex: none;
 		width: 76px;
 		border-radius: var(--r-md);
-		background: var(--lime);
-		color: var(--lime-ink);
+		background: var(--money);
+		color: var(--money-ink);
 		font-size: 16px;
 		font-weight: 700;
 	}

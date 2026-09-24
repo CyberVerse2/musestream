@@ -174,10 +174,10 @@
 		border-radius: 7px;
 	}
 	.gift-option.chosen .gift-name {
-		color: var(--lime);
+		color: var(--money);
 	}
 	.gift-option:focus-visible {
-		outline: 2px solid var(--lime);
+		outline: 2px solid var(--money);
 		outline-offset: 2px;
 	}
 	.gift-icon {
@@ -189,7 +189,7 @@
 	}
 	@media (hover: hover) and (pointer: fine) {
 		.gift-option:hover .gift-name {
-			color: var(--lime);
+			color: var(--money);
 		}
 		.gift-option:hover .gift-icon {
 			transform: translateY(-3px) rotate(-6deg);
@@ -256,7 +256,7 @@
 		bottom: 70px;
 		left: calc(50% + 82px);
 		font-size: 32px;
-		color: var(--lime);
+		color: var(--money);
 		font-weight: 800;
 		transform: rotate(-12deg);
 	}
@@ -272,13 +272,13 @@
 		top: 50%;
 		width: 7px;
 		height: 12px;
-		background: #dfff67;
+		background: #00fdff;
 		border-radius: 2px;
 		transform: rotate(calc(var(--i) * 30deg));
 		animation: scatter 1.4s ease-out both;
 	}
 	.particle:nth-child(odd) {
-		background: #b098ff;
+		background: #fc1951;
 	}
 	.spark .gift-art {
 		left: auto;
@@ -289,12 +289,12 @@
 	}
 	.spark .hero {
 		animation: electric 650ms ease-out 3;
-		filter: drop-shadow(0 0 24px #e4ff63);
+		filter: drop-shadow(0 0 24px #00fdff);
 	}
 	.ring {
 		position: absolute;
 		inset: 16px;
-		border: 2px solid #dfff67;
+		border: 2px solid #00fdff;
 		border-radius: 50%;
 		animation: ripple 1.6s calc(var(--i) * 250ms) ease-out infinite;
 	}
@@ -304,9 +304,9 @@
 		width: 100%;
 		height: 100%;
 		fill: none;
-		stroke: #e5ff87;
+		stroke: #9ffeff;
 		stroke-width: 2;
-		filter: drop-shadow(0 0 7px #caff47);
+		filter: drop-shadow(0 0 7px #00fdff);
 	}
 	.electric-branches path {
 		stroke-dasharray: 1;
@@ -328,10 +328,10 @@
 	}
 	.crown .hero {
 		animation: crown-in 1.1s 200ms both;
-		filter: drop-shadow(0 0 18px #ffc94f88);
+		filter: drop-shadow(0 0 18px #fc195188);
 	}
 	.crown .particle {
-		background: #ffd65a;
+		background: #ffffff;
 		width: 5px;
 		height: 5px;
 		animation: assemble 1.1s ease-in both;
@@ -362,7 +362,7 @@
 		left: 44%;
 		width: 12%;
 		height: 180px;
-		background: linear-gradient(#fff7b0, #dfff6790 25%, transparent);
+		background: linear-gradient(#ffffff, #00fdff90 25%, transparent);
 		filter: blur(5px);
 		transform-origin: top;
 		animation: trail 350ms alternate infinite;
@@ -513,7 +513,7 @@
 		100% {
 			opacity: 1;
 			transform: scale(1.2);
-			filter: drop-shadow(0 0 40px #fce3a9);
+			filter: drop-shadow(0 0 40px #bffeff);
 		}
 	}
 	@media (max-width: 1023px) {

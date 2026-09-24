@@ -51,7 +51,7 @@
 		font-weight: 600;
 	}
 	.msg.chat-you b {
-		color: var(--lime);
+		color: var(--money);
 	}
 	@media (max-height: 640px) {
 		.chat {

@@ -63,7 +63,7 @@
 		<button class="btn-quiet" aria-pressed={following} onclick={() => toggleFollow(agent.id)}
 			>{following ? 'Following' : 'Follow'}</button
 		>
-		<button class="btn-lime" disabled={!tok} onclick={() => openBuy(agent.id)}>Buy ${sym}</button>
+		<button class="btn-money" disabled={!tok} onclick={() => openBuy(agent.id)}>Buy ${sym}</button>
 	</div>
 </Sheet>
 
@@ -78,7 +78,7 @@
 	.ring {
 		padding: 3px;
 		border-radius: 50%;
-		background: conic-gradient(var(--live), #ff8ab3, var(--live));
+		background: conic-gradient(var(--live), var(--money), var(--live));
 	}
 	.ring :global(img),
 	.ring :global(.mark) {

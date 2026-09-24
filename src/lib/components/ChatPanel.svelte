@@ -132,7 +132,7 @@
 		margin-right: 2px;
 	}
 	.message.you b {
-		color: var(--lime);
+		color: var(--money);
 	}
 	.message.trade {
 		align-items: center;

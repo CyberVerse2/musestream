@@ -17,7 +17,7 @@
 	}
 
 	/* hearts float up from the like button */
-	const HEART_COLORS = ['#ff3b5c', '#b9a6ff', '#d4ff3f', '#ff8ab3'];
+	const HEART_COLORS = ['#fc1951', '#00fdff', '#ffffff', '#ff7a9c'];
 	let hearts = $state<{ id: number; x: number; c: string }[]>([]);
 	let seq = 0;
 	function tapLike() {

@@ -103,7 +103,7 @@
 				<p>
 					Sign in to get your wallet. It holds your USDG and your coins, and only you control it.
 				</p>
-				<button class="btn-lime" onclick={openSignIn}>Sign in</button>
+				<button class="btn-money" onclick={openSignIn}>Sign in</button>
 			</div>
 		{:else if !info}
 			<div class="empty">
@@ -140,10 +140,10 @@
 			{#if canSignIn()}
 				<div class="signin">
 					<p>Sign in to trade from a wallet only you control.</p>
-					<button class="btn-lime" onclick={openSignIn}>Sign in</button>
+					<button class="btn-money" onclick={openSignIn}>Sign in</button>
 				</div>
 			{:else if info.ownWallet}
-				<button class="btn-lime add" onclick={openReceive}>Add money</button>
+				<button class="btn-money add" onclick={openReceive}>Add money</button>
 			{/if}
 
 			<h2 class="section-title">Coins <small>{rows.length} held</small></h2>
@@ -383,7 +383,7 @@
 		color: var(--mut);
 	}
 	.ico.buy {
-		color: var(--lime);
+		color: var(--money);
 	}
 	.ico.gift {
 		color: var(--agent);

@@ -84,7 +84,7 @@
 	.waiting {
 		position: absolute;
 		inset: 0;
-		background: linear-gradient(160deg, #1c1535, #0b2a30 55%, #2a0d22);
+		background: linear-gradient(160deg, #06282b, #0a0a0c 55%, #2b0712);
 		background-size: 200% 200%;
 		animation: drift 8s ease-in-out infinite alternate;
 	}

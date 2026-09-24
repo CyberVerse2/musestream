@@ -96,7 +96,7 @@
 				required
 				aria-label="Email"
 			/>
-			<button class="btn-lime" disabled={busy || !email.includes('@')}
+			<button class="btn-money" disabled={busy || !email.includes('@')}
 				>{busy ? 'Sending…' : 'Send code'}</button
 			>
 		</form>
@@ -116,7 +116,7 @@
 				required
 				aria-label="Code"
 			/>
-			<button class="btn-lime" disabled={busy || code.trim().length < 4}
+			<button class="btn-money" disabled={busy || code.trim().length < 4}
 				>{busy ? 'Checking…' : 'Sign in'}</button
 			>
 			<button type="button" class="link" onclick={() => (step = 'email')}>Use another email</button>
