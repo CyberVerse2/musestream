@@ -1,4 +1,7 @@
-// Paid video from Reactor's Orbis model, through the Python worker in video-worker/.
+// Paid video from Reactor's H3 Reference model, through the Python worker in video-worker/.
+// The video is a chain of short clips of the agent in its scene, each saved as a file:
+// the agent's acts become clips, and between acts it carries on with the last one. Players
+// play the files back to back, so viewers see one continuous stream.
 //
 // Safety first, because every second a session is open is billed:
 // - Only agents listed in `agents` use Reactor. Everyone else gets the fallback (the free mock).
@@ -11,12 +14,16 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { join, relative } from 'node:path';
-import type { StreamInfo, VideoProvider, VideoSource } from './provider.ts';
+import type { LiveClip, StreamInfo, VideoProvider, VideoSource } from './provider.ts';
 import type { VideoBudget } from './budget.ts';
 import { localImage } from './images.ts';
+import { actClips, idleClip, type Act, type ClipCast } from './h3-prompts.ts';
+import type { VoiceSamples } from './voice-sample.ts';
 
 /** a session shorter than this is mostly start-up time, which is billed too */
 const MIN_SESSION_SECONDS = 30;
+/** clips a stream's source lists; a player joining late starts from the newest */
+const RECENT_CLIPS = 6;
 
 export interface ReactorOptions {
 	apiKey: string;
@@ -34,19 +41,27 @@ export interface ReactorOptions {
 	/** the worker's command; the session's arguments are added after it */
 	workerCommand?: string[];
 	fallback: VideoProvider;
+	/** each agent's voice sample; without it the model picks a voice */
+	voiceSamples?: VoiceSamples;
 }
 
 interface Session {
 	proc: ChildProcess;
 	source: Promise<VideoSource>;
 	lastPrompt: string;
+	/** the last act's action, which idle clips carry on */
+	lastAction?: string;
 	stream: StreamInfo;
+	cast: ClipCast;
+	clips: LiveClip[];
 }
 
 export class ReactorVideo implements VideoProvider {
 	readonly name = 'reactor';
 	private opts: ReactorOptions;
 	private sessions = new Map<string, Session>();
+	/** streams whose session is being set up, holding a place in `maxSessions` */
+	private starting = new Set<string>();
 	private watching = new Map<string, number>();
 	private idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 	private listener: ((streamId: string, source: VideoSource) => void) | null = null;
@@ -64,13 +79,26 @@ export class ReactorVideo implements VideoProvider {
 		const running = this.sessions.get(stream.streamId);
 		if (running) {
 			running.lastPrompt = prompt;
-			running.proc.stdin?.write(JSON.stringify({ prompt }) + '\n');
-			return running.source;
+			this.send(running, { idle: idleClip(running.cast, prompt, running.lastAction) });
+			return running.clips.length ? clipsSource(running) : running.source;
 		}
 		if (this.canStart(stream) && (this.watching.get(stream.streamId) ?? 0) > 0) {
 			return this.start(stream, prompt);
 		}
 		return this.replay(stream, prompt);
+	}
+
+	act(stream: StreamInfo, scene: string, act: Act): boolean {
+		const running = this.sessions.get(stream.streamId);
+		if (!running) return false;
+		for (const clip of actClips(running.cast, scene, act)) this.send(running, { clip });
+		running.lastAction = act.action;
+		this.send(running, { idle: idleClip(running.cast, scene, act.action) });
+		return true;
+	}
+
+	private send(session: Session, msg: object) {
+		session.proc.stdin?.write(JSON.stringify(msg) + '\n');
 	}
 
 	watchers(stream: StreamInfo, scene: string, count: number) {
@@ -111,7 +139,8 @@ export class ReactorVideo implements VideoProvider {
 	private canStart(stream: StreamInfo) {
 		return (
 			this.opts.agents.includes(stream.handle) &&
-			this.sessions.size < this.opts.maxSessions &&
+			!this.starting.has(stream.streamId) &&
+			this.sessions.size + this.starting.size < this.opts.maxSessions &&
 			this.opts.budget.remaining(stream.agentId) >= MIN_SESSION_SECONDS
 		);
 	}
@@ -130,26 +159,44 @@ export class ReactorVideo implements VideoProvider {
 		);
 		const day = this.opts.budget.today();
 		this.opts.budget.add(stream.agentId, day, seconds);
+		this.starting.add(stream.streamId);
 		const startedAt = Date.now();
 
-		const out = join(this.opts.mediaDir, stream.streamId, 'live');
-		const url = `/media/${relative(this.opts.mediaDir, out)}/live.m3u8`;
+		// a folder per session: clip names restart with each session, and clips are cached for good
+		const out = join(this.opts.mediaDir, stream.streamId, `session-${startedAt}`);
+		const base = `/media/${relative(this.opts.mediaDir, out)}`;
 		const [cmd, ...cmdArgs] = this.opts.workerCommand ?? ['uv', 'run', '--quiet', 'worker.py'];
-		// the stream's reference picture, else the agent's avatar: Orbis starts from it
-		const image = await localImage(stream.imageUrl ?? stream.avatarUrl, this.opts);
+		// the agent's look and voice, and its scene, carry through every clip
+		const [avatar, scenePicture, voice] = await Promise.all([
+			localImage(stream.avatarUrl, this.opts),
+			localImage(stream.imageUrl, this.opts),
+			this.opts.voiceSamples?.sample(stream.agentId, stream.name) ?? null
+		]).catch((err: unknown) => {
+			this.starting.delete(stream.streamId);
+			this.opts.budget.add(stream.agentId, day, -seconds);
+			throw err;
+		});
+		const cast: ClipCast = {
+			name: stream.name,
+			avatarPicture: Boolean(avatar),
+			scenePicture: Boolean(scenePicture),
+			voice: Boolean(voice)
+		};
+		const idle = idleClip(cast, prompt);
 		const proc = spawn(
 			cmd!,
 			[
 				...cmdArgs,
 				'--out',
 				out,
-				'--prompt',
-				prompt,
 				'--max-seconds',
 				String(seconds),
-				// the model's music and atmosphere; the agent's voice comes from the server
-				'--audio',
-				...(image ? ['--image', image] : [])
+				'--idle-prompt',
+				idle.prompt,
+				'--idle-seconds',
+				String(idle.seconds),
+				...[avatar, scenePicture].flatMap((image) => (image ? ['--image', image] : [])),
+				...(voice ? ['--voice', voice] : [])
 			],
 			{
 				cwd: this.opts.workerDir,
@@ -168,8 +215,9 @@ export class ReactorVideo implements VideoProvider {
 			resolveSource = res;
 			rejectSource = rej;
 		});
-		const session: Session = { proc, source, lastPrompt: prompt, stream };
+		const session: Session = { proc, source, lastPrompt: prompt, stream, cast, clips: [] };
 		this.sessions.set(stream.streamId, session);
+		this.starting.delete(stream.streamId);
 
 		// runs once, on the worker's "ended" report or on its exit, whichever comes first
 		let finished = false;
@@ -189,13 +237,21 @@ export class ReactorVideo implements VideoProvider {
 		};
 
 		createInterface({ input: proc.stdout! }).on('line', (line) => {
-			let msg: { event?: string; reason?: string; seconds?: number };
+			let msg: { event?: string; reason?: string; seconds?: number; file?: string; kind?: string };
 			try {
 				msg = JSON.parse(line);
 			} catch {
 				return;
 			}
-			if (msg.event === 'playlist') resolveSource({ kind: 'hls', url });
+			if (msg.event === 'clip' && msg.file) {
+				const first = session.clips.length === 0;
+				session.clips = [
+					...session.clips,
+					{ url: `${base}/${msg.file}`, idle: msg.kind === 'idle' }
+				].slice(-RECENT_CLIPS);
+				if (first) resolveSource(clipsSource(session));
+				else this.listener?.(stream.streamId, clipsSource(session));
+			}
 			if (msg.event === 'ended') {
 				console.log(
 					`[reactor] session for @${stream.handle} ended: ${msg.reason}, ${msg.seconds}s`
@@ -208,4 +264,8 @@ export class ReactorVideo implements VideoProvider {
 
 		return source.catch(() => this.replay(stream, prompt));
 	}
+}
+
+function clipsSource(session: Session): VideoSource {
+	return { kind: 'clips', clips: session.clips };
 }

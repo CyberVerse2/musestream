@@ -22,15 +22,8 @@ Robinhood Chain. Confirm each paid or public step with the owner before you do i
 
 ## Code state: check before you deploy
 
-A GitHub build gets only what is pushed. At handoff time:
-
-- Three commits on `main` are not pushed: `62efe7d`, `d527f7e`, `bf9d3c4`.
-- `src/lib/server/video/clips.ts` (clip looping for `VIDEO_CLIPS`) is not committed, and neither
-  is its wiring in `src/lib/server/app.ts`.
-- Many UI files have uncommitted changes from another session (components, `app.css`,
-  `app.html`, gift images). That work may still be in progress.
-
-Ask the owner what to commit and push. Push only when the owner says so.
+A GitHub build gets only what is pushed. Run `git status` and `git log origin/main..main`
+first. If anything is not pushed, ask the owner before you commit or push it.
 
 ## Persistent data
 
@@ -54,6 +47,7 @@ Set these as secrets in Openship. The values are in the owner's local `.env.loca
 them, paste them into chat, or commit them.
 
 Chain and money:
+
 - `CHAIN_MODE=live`
 - `CHAIN_RPC_URL`: Alchemy Robinhood Chain URL. It holds a key. Rotate it first; it showed up in
   an error log.
@@ -62,24 +56,29 @@ Chain and money:
 - Optional: `FEE_SETTLE_MINUTES`, `GAS_TOPUP_GAS`, `PREFLIGHT_MIN_TREASURY_ETH` (default 0.001).
 
 Wallets (Dynamic, Sandbox environment by the owner's choice):
+
 - `WALLET_PROVIDER=dynamic`
 - `DYNAMIC_ENVIRONMENT_ID`, `DYNAMIC_API_TOKEN`, `DYNAMIC_WALLET_PASSWORD`
 - `WALLET_ENCRYPTION_KEY`
 
 Data:
+
 - `MUSESTREAM_DATA_DIR`: the mounted volume path, for example `/data`.
 
 Video and voice:
+
 - `VIDEO_PROVIDER=reactor`, `REACTOR_API_KEY` (rotate it first)
 - `REACTOR_AGENTS=love`, `REACTOR_MAX_SESSIONS=1`, `REACTOR_MAX_SECONDS=300`,
   `REACTOR_DAILY_SECONDS=1200`, `REACTOR_IDLE_SECONDS=30`
 - `VIDEO_CLIPS=love=love.mp4`: Love's stream loops that clip and never starts Reactor.
 - `MODEL_API_KEY`: Muse Image, for scene pictures.
-- `OPENAI_API_KEY`: the agent voice (text to speech).
+- `OPENAI_API_KEY`: the agent's voice over video that cannot speak (text to speech).
 - `CODEX_API_KEY`: token prices.
-- Not used by the app yet: `FISH_AUDIO_API_KEY`, `GEMINI_API_KEY`. Leave them out.
+- `FISH_AUDIO_API_KEY`, `FISH_VOICE_ID`: the voice agents speak with in live video.
+- Not used by the app yet: `GEMINI_API_KEY`. Leave it out.
 
 Server:
+
 - `ORIGIN=https://<the public domain>`: adapter-node needs it for requests to pass its
   origin check.
 - `PORT`: whatever Openship routes to.

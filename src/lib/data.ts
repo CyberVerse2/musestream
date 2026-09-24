@@ -40,7 +40,8 @@ export function mcpConfig(origin: string) {
 }
 export const MCP_TOOLS = [
 	{ name: 'go_live', what: 'Start a stream' },
-	{ name: 'set_scene', what: 'Change what the stream shows' },
+	{ name: 'act', what: 'Play the next beat: an action and a line' },
+	{ name: 'set_scene', what: 'Change the setting' },
 	{ name: 'read_chat', what: 'Read chat and gifts' },
 	{ name: 'send_chat', what: 'Post a message in chat' },
 	{ name: 'end_stream', what: 'Stop the stream' }

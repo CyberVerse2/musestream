@@ -1,8 +1,9 @@
 <script lang="ts">
-	// What a stream shows: a looping clip, or live video from a playlist.
-	// A new source fades in over the old one.
+	// What a stream shows: a looping clip, or live video as a chain of clips played back to
+	// back. A new source fades in over the old one.
 	import { fade } from 'svelte/transition';
 	import type { VideoSource } from '$lib/api';
+	import { chain } from '$lib/clip-chain';
 	import { ui } from '$lib/state/ui.svelte';
 	import { reducedMotion } from '$lib/motion';
 
@@ -12,31 +13,10 @@
 		playing = true
 	}: { video: VideoSource | null; poster?: string; playing?: boolean } = $props();
 
-	const key = $derived(video ? `${video.kind}:${video.url}` : '');
-
-	type Hls = import('hls.js').default;
-
-	/** attach a source to a <video>; live playlists use hls.js where the browser lacks HLS */
-	function source(node: HTMLVideoElement, src: VideoSource) {
-		let hls: Hls | null = null;
-		let gone = false;
-		if (src.kind === 'file' || node.canPlayType('application/vnd.apple.mpegurl')) {
-			node.src = src.url;
-		} else {
-			void import('hls.js').then(({ default: HlsJs }) => {
-				if (gone || !HlsJs.isSupported()) return;
-				hls = new HlsJs({ liveSyncDurationCount: 2, lowLatencyMode: false });
-				hls.loadSource(src.url);
-				hls.attachMedia(node);
-			});
-		}
-		return {
-			destroy() {
-				gone = true;
-				hls?.destroy();
-			}
-		};
-	}
+	// live clips keep one player for the whole session, so it can chain them
+	const key = $derived(
+		video ? (video.kind === 'clips' ? 'clips' : `${video.kind}:${video.url}`) : ''
+	);
 
 	function play(node: HTMLVideoElement, active: boolean) {
 		const apply = (on: boolean) => {
@@ -52,15 +32,23 @@
 <div class="frame" style:background-image={poster ? `url(${poster})` : undefined}>
 	{#if video}
 		{#key key}
-			<video
-				muted={ui.player.muted}
-				loop={video.kind === 'file'}
-				playsinline
-				preload="auto"
-				use:source={video}
-				use:play={playing}
-				in:fade={{ duration: reducedMotion() ? 0 : 600 }}
-			></video>
+			{#if video.kind === 'clips'}
+				<div
+					class="chain"
+					use:chain={{ clips: video.clips, muted: ui.player.muted, playing }}
+					in:fade={{ duration: reducedMotion() ? 0 : 600 }}
+				></div>
+			{:else}
+				<video
+					muted={ui.player.muted}
+					loop
+					playsinline
+					preload="auto"
+					src={video.url}
+					use:play={playing}
+					in:fade={{ duration: reducedMotion() ? 0 : 600 }}
+				></video>
+			{/if}
 		{/key}
 	{:else if !poster}
 		<div class="waiting" aria-hidden="true"></div>
@@ -73,12 +61,21 @@
 		inset: 0;
 		background: #000 center / cover no-repeat;
 	}
-	video {
+	.chain {
+		position: absolute;
+		inset: 0;
+	}
+	video,
+	.chain :global(video) {
 		position: absolute;
 		inset: 0;
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
+	}
+	/* the hidden player loads the next clip underneath the one on show */
+	.chain :global(video:not(.on)) {
+		visibility: hidden;
 	}
 	/* no clip yet and no picture: a slow gradient while the first scene renders */
 	.waiting {

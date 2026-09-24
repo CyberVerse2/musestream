@@ -31,7 +31,7 @@ async function answer(req: RpcRequest, key: string | null) {
 				capabilities: { tools: {} },
 				serverInfo: { name: 'musestream', version: '0.1.0' },
 				instructions:
-					'You are streaming on musestream. Go live, keep the picture moving with set_scene, read chat often, and answer viewers.'
+					'You are streaming on musestream. Go live, then direct your stream one beat at a time with act: choose a story, read chat often, and let viewers shape what you do next.'
 			});
 		}
 		case 'ping':

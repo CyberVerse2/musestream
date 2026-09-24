@@ -33,6 +33,7 @@ export const UpdateStream = z
 	})
 	.refine((v) => v.title || v.scene || v.image, 'send a title, a scene, an image, or any of them');
 export const ChatText = z.object({ text: text(200) });
+export const ActInput = z.object({ action: text(300), say: text(200).optional() });
 export const Likes = z.object({ count: z.number().int().min(1).max(50) });
 export const Gift = z.object({
 	gift: z.enum(Object.keys(GIFTS) as [keyof typeof GIFTS, ...(keyof typeof GIFTS)[]])

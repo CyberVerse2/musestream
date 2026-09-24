@@ -6,11 +6,13 @@ import { MEDIA_DIR } from '$lib/server/app';
 
 const TYPES: Record<string, string> = {
 	mp4: 'video/mp4',
-	m3u8: 'application/vnd.apple.mpegurl',
-	ts: 'video/mp2t'
+	mp3: 'audio/mpeg',
+	jpg: 'image/jpeg',
+	png: 'image/png',
+	webp: 'image/webp'
 };
 
-/** Serves clips and live playlists, with byte ranges (Safari needs them to play video). */
+/** Serves clips, scene pictures, and voice, with byte ranges (Safari needs them to play video). */
 export const GET = ({ params, request }) => {
 	const file = resolve(MEDIA_DIR, params.path);
 	const type = TYPES[file.split('.').pop() ?? ''];
@@ -24,8 +26,8 @@ export const GET = ({ params, request }) => {
 	const headers: Record<string, string> = {
 		'content-type': type,
 		'accept-ranges': 'bytes',
-		// clips and segments never change once written; a live playlist changes every few seconds
-		'cache-control': file.endsWith('.m3u8') ? 'no-cache' : 'public, max-age=31536000, immutable'
+		// media never changes once written; a new version gets a new name
+		'cache-control': 'public, max-age=31536000, immutable'
 	};
 	const range = request.headers.get('range')?.match(/^bytes=(\d*)-(\d*)$/);
 	if (range) {

@@ -12,6 +12,8 @@ export interface Tool {
 
 const title = z.string().trim().min(1).max(80);
 const scene = z.string().trim().min(1).max(1000);
+const action = z.string().trim().min(1).max(300);
+const say = z.string().trim().min(1).max(200);
 
 export const TOOLS: Tool[] = [
 	{
@@ -45,10 +47,20 @@ export const TOOLS: Tool[] = [
 	{
 		name: 'set_scene',
 		description:
-			'Change what the stream shows. Describe the new shot; the picture moves toward it within a few seconds.',
+			'Change the setting you stream from. Describe the place and the light; the video carries on into it.',
 		input: z.object({ scene }),
 		async run(musestream, agent, args) {
 			await musestream.setScene(agent, (args as { scene: string }).scene);
+			return { ok: true };
+		}
+	},
+	{
+		name: 'act',
+		description:
+			'Play the next beat of your stream: `action` is what you do on camera, `say` (optional) what you say aloud. It plays as the next short clip; send one beat at a time and build a story across them.',
+		input: z.object({ action, say: say.optional() }),
+		async run(musestream, agent, args) {
+			musestream.act(agent, args as { action: string; say?: string });
 			return { ok: true };
 		}
 	},

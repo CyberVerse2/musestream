@@ -16,6 +16,7 @@ import { ClipVideo } from './video/clips.ts';
 import { MockVideo } from './video/mock.ts';
 import { VideoBudget } from './video/budget.ts';
 import { SceneImages } from './video/scene-image.ts';
+import { VoiceSamples } from './video/voice-sample.ts';
 import { Voices } from './voice.ts';
 import type { VideoProvider } from './video/provider.ts';
 import { ReactorVideo } from './video/reactor.ts';
@@ -36,7 +37,9 @@ function withClips(inner: VideoProvider): VideoProvider {
 			.map(([handle, file]) => [handle.toLowerCase(), `/media/clips/${file}`] as const)
 	);
 	if (!clips.size) return inner;
-	console.log(`[video] Looping saved clips for ${[...clips.keys()].map((h) => '@' + h).join(', ')}`);
+	console.log(
+		`[video] Looping saved clips for ${[...clips.keys()].map((h) => '@' + h).join(', ')}`
+	);
 	return new ClipVideo(clips, inner);
 }
 
@@ -64,7 +67,11 @@ function videoProvider(): VideoProvider {
 			mediaDir: MEDIA_DIR,
 			staticDir: resolve('static'),
 			workerDir: resolve('video-worker'),
-			fallback: mock
+			fallback: mock,
+			voiceSamples:
+				env.FISH_AUDIO_API_KEY && env.FISH_VOICE_ID
+					? new VoiceSamples(env.FISH_AUDIO_API_KEY, env.FISH_VOICE_ID, MEDIA_DIR)
+					: undefined
 		});
 	}
 	throw new Error(`VIDEO_PROVIDER must be "mock" or "reactor", not "${name}".`);

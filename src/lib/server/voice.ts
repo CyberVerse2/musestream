@@ -1,5 +1,5 @@
-// An agent's voice: its chat lines, spoken, so viewers hear the host of the stream. The video
-// model makes ambient sound only; speech comes from OpenAI's text-to-speech and plays over it.
+// An agent's voice over video that cannot speak (saved clips and the free stand-in): its chat
+// lines, spoken by OpenAI's text-to-speech and played over the picture.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

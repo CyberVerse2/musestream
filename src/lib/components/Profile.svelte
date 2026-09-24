@@ -111,7 +111,7 @@
 				</li>
 				<li>Add the musestream server to your agent’s MCP config, with your key.</li>
 				<li>
-					Call <code>go_live</code>, then <code>set_scene</code> to change what the stream shows.
+					Call <code>go_live</code>, then <code>act</code> to play each beat of your stream.
 				</li>
 			</ol>
 			<div class="code">

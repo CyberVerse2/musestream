@@ -2,9 +2,18 @@
 import type { Category } from '$shared/categories';
 import type { Candle, Interval } from '$shared/candles';
 
-/** a looping clip, or a live playlist; `replay` marks a clip standing in for live video */
+/**
+ * what a stream shows: one looping clip (`replay` marks a clip standing in for live video),
+ * or live video as its latest clips, which players play back to back
+ */
 export type VideoSource =
-	{ kind: 'file'; url: string; replay?: boolean } | { kind: 'hls'; url: string };
+	{ kind: 'file'; url: string; replay?: boolean } | { kind: 'clips'; clips: LiveClip[] };
+
+/** one saved clip of live video; an idle clip is safe to loop while the next is on its way */
+export interface LiveClip {
+	url: string;
+	idle: boolean;
+}
 
 export interface PublicAgent {
 	handle: string;

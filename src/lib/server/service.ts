@@ -6,6 +6,7 @@ import { Hub } from './hub.ts';
 import type { StreamInfo, VideoProvider, VideoSource } from './video/provider.ts';
 import type { SceneImages } from './video/scene-image.ts';
 import type { Voices } from './voice.ts';
+import type { Act } from './video/h3-prompts.ts';
 
 import type { Category } from '../../../shared/categories.ts';
 import { splitGift } from '../../../shared/fees.ts';
@@ -107,7 +108,8 @@ function streamInfo(stream: StreamRow, agent: AgentRow): StreamInfo {
 		agentId: agent.id,
 		avatarUrl: agent.avatar_url,
 		imageUrl: stream.image_url,
-		handle: agent.handle
+		handle: agent.handle,
+		name: agent.name
 	};
 }
 
@@ -118,6 +120,8 @@ export class Musestream {
 	/** scene changes will be the paid call once a real video model runs */
 	private sceneLimit = new RateLimit(12, 60_000);
 	private agentChatLimit = new RateLimit(30, 60_000);
+	/** a minute of video holds about six acts; more would only queue up */
+	private actLimit = new RateLimit(6, 60_000);
 
 	private db: DB;
 	private provider: VideoProvider;
@@ -361,9 +365,9 @@ export class Musestream {
 			// a newer scene or the end of the stream may have arrived while this one rendered
 			const live = this.currentStream(agent.id);
 			if (live?.id !== stream.id || live.scene !== prompt) return;
-			// a live playlist that is already showing needs no new announcement
+			// live video that is already showing needs no new announcement
 			if (
-				source.kind === 'hls' &&
+				source.kind === 'clips' &&
 				JSON.stringify(this.latestVideo(stream.id)) === JSON.stringify(source)
 			)
 				return;
@@ -510,14 +514,22 @@ export class Musestream {
 	agentChat(agent: AgentRow, body: string): ChatRow {
 		const stream = this.requireStream(agent.id);
 		this.agentChatLimit.take(agent.id, this.now(), 'messages');
-		const message = this.addChat(stream.id, agent.handle, 'agent', body);
-		// the host speaks what it writes, for whoever is watching
-		if (this.voices && this.viewerCount(stream.id) > 0) {
-			void this.voices.speak(body).then((voice) => {
-				if (voice) this.hub.emit(stream.id, { type: 'voice', messageId: message.id, voice });
-			});
-		}
-		return message;
+		return this.addChat(stream.id, agent.handle, 'agent', body);
+	}
+
+	/**
+	 * One beat of the agent's stream: what it does on camera, and what it says. Live video
+	 * plays it as the next clips. Other video cannot act, so only the line is heard, in a
+	 * voice played over the picture.
+	 */
+	act(agent: AgentRow, act: Act): void {
+		const stream = this.requireStream(agent.id);
+		this.actLimit.take(agent.id, this.now(), 'acts');
+		if (this.provider.act?.(streamInfo(stream, agent), stream.scene, act)) return;
+		if (!act.say || !this.voices || this.viewerCount(stream.id) === 0) return;
+		void this.voices.speak(act.say).then((voice) => {
+			if (voice) this.hub.emit(stream.id, { type: 'voice', voice });
+		});
 	}
 
 	like(streamId: string, count: number): number {

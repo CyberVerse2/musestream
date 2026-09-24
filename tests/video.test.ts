@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from '../src/lib/server/db.ts';
 import { VideoBudget } from '../src/lib/server/video/budget.ts';
@@ -16,7 +19,8 @@ const stream: StreamInfo = {
 	agentId: 'a1',
 	avatarUrl: null,
 	imageUrl: null,
-	handle: 'jess'
+	handle: 'jess',
+	name: 'Jess'
 };
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -56,7 +60,7 @@ test('a viewer starts paid video; when the last one leaves, it stops and the rep
 	const { budget, video, changes } = setup();
 	video.watchers(stream, 'a rooftop at dusk', 1);
 	await tick(300);
-	assert.equal(changes.at(-1)?.kind, 'hls', 'the live playlist reached the stream');
+	assert.equal(changes.at(-1)?.kind, 'clips', 'the first live clip reached the stream');
 	assert.equal(budget.remaining('a1'), 540, 'the session reserved its full 60 seconds');
 
 	video.watchers(stream, 'a rooftop at dusk', 0);
@@ -81,4 +85,43 @@ test('a session never runs past what is left of the allowance', async () => {
 	await video.stop('s1');
 	await tick(300);
 	assert.equal(budget.remaining('a1'), 44);
+});
+
+test('in live video an act plays as the next clips, and idle clips carry it on', async () => {
+	const log = join(mkdtempSync(join(tmpdir(), 'musestream-')), 'worker.jsonl');
+	process.env.FAKE_WORKER_LOG = log;
+	const { video } = setup();
+	const act = { action: 'waves at the camera', say: 'Hi everyone, welcome in!' };
+	assert.equal(video.act(stream, 'a rooftop at dusk', act), false, 'nothing is live yet');
+
+	video.watchers(stream, 'a rooftop at dusk', 1);
+	await tick(300);
+	const source = await video.render(stream, 'a rooftop at dusk');
+	assert.deepEqual(source, {
+		kind: 'clips',
+		clips: [{ url: source.kind === 'clips' ? source.clips[0]!.url : '', idle: true }]
+	});
+	assert.match(
+		source.kind === 'clips' ? source.clips[0]!.url : '',
+		/^\/media\/s1\/session-\d+\/00001-idle\.mp4$/
+	);
+	assert.equal(video.act(stream, 'a rooftop at dusk', act), true);
+	await video.render(stream, 'the roof, now in rain');
+	await video.stop('s1');
+	await tick(200);
+	delete process.env.FAKE_WORKER_LOG;
+
+	const entries = readFileSync(log, 'utf8')
+		.trim()
+		.split('\n')
+		.map((l) => JSON.parse(l));
+	const args: string[] = entries[0].args;
+	assert.match(args[args.indexOf('--idle-prompt') + 1], /a rooftop at dusk/);
+	const clips = entries.filter((e) => e.clip);
+	assert.equal(clips.length, 1);
+	assert.match(clips[0].clip.prompt, /waves at the camera/);
+	assert.match(clips[0].clip.prompt, /<d>\[English\] Hi everyone, welcome in!<\/d>/);
+	const idle = entries.filter((e) => e.idle).at(-1);
+	assert.match(idle.idle.prompt, /the roof, now in rain/, 'a new scene reaches the idle clip');
+	assert.match(idle.idle.prompt, /carries on: waves at the camera/);
 });

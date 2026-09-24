@@ -12,7 +12,7 @@ export type StreamEvent =
 	/** the stream's opening picture is ready */
 	| { type: 'image'; image: string }
 	/** the agent's chat line, spoken */
-	| { type: 'voice'; messageId: number; voice: string }
+	| { type: 'voice'; voice: string }
 	/** the stream's coin traded; the payload is what the app shows */
 	| { type: 'coin'; coin: unknown }
 	| { type: 'ended' };
