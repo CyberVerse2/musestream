@@ -7,9 +7,10 @@
 	import { closeSheet, openBuy, openAgent } from '$lib/state/ui.svelte';
 	import { coinOf, deltaOf, market } from '$lib/state/market.svelte';
 	import { fmtPct, fmtPrice, fmtTok, fmtUsd } from '$lib/format';
-	import { sparkline, trendColor } from '$lib/sparkline';
 	import Sheet from './Sheet.svelte';
 	import GradBar from './GradBar.svelte';
+	import CandleChart from './CandleChart.svelte';
+	import type { Candle, Interval } from '$shared/candles';
 	import { Lock } from 'phosphor-svelte';
 
 	let { id }: { id: string } = $props();
@@ -39,12 +40,25 @@
 
 	if (!wallet.loaded) void refreshWallet();
 
-	// reload trades and holders whenever the coin trades
+	let interval = $state<Interval>('5m');
+	let candles = $state<Candle[]>([]);
+
+	// reload trades, holders, and candles whenever the coin trades
 	$effect(() => {
 		void market.coins[id]?.history.length;
 		void api
 			.coin(id)
 			.then((d) => (detail = d))
+			.catch(() => {});
+	});
+	$effect(() => {
+		void market.coins[id]?.history.length;
+		const want = interval;
+		void api
+			.candles(id, want)
+			.then((d) => {
+				if (want === interval) candles = d.candles;
+			})
 			.catch(() => {});
 	});
 
@@ -86,8 +100,14 @@
 			<span class="big">{fmtPrice(tok.price)}</span>
 			<span class:up={delta >= 0} class:down={delta < 0}>{fmtPct(delta)}</span>
 		</div>
-		<canvas class="chart" use:sparkline={{ data: tok.hist.slice(-80), color: trendColor(delta) }}
-		></canvas>
+		<div class="intervals" role="group" aria-label="Chart range">
+			{#each ['1m', '5m', '1h', '1d'] as const as iv (iv)}
+				<button class="chip" aria-pressed={interval === iv} onclick={() => (interval = iv)}
+					>{iv}</button
+				>
+			{/each}
+		</div>
+		<CandleChart {candles} ethUsd={market.ethUsd} />
 
 		<dl class="facts">
 			<div>
@@ -227,11 +247,15 @@
 		font-weight: 700;
 		letter-spacing: -0.03em;
 	}
-	.chart {
-		display: block;
-		width: 100%;
-		height: 140px;
-		margin-top: 12px;
+	.intervals {
+		display: flex;
+		gap: 6px;
+		margin: 12px 0 8px;
+	}
+	.intervals .chip {
+		height: 28px;
+		padding: 0 12px;
+		font-size: 13px;
 	}
 	.facts {
 		display: grid;

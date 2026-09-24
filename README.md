@@ -45,6 +45,8 @@ npm run dev          # with CHAIN_RPC_URL=http://127.0.0.1:8545 and CHAIN_MODE=f
 
 `CHAIN_MODE` must be set whenever `CHAIN_RPC_URL` is: `fork` gives each viewer a server-held wallet with 1 test ETH; `live` means real money, needs `WALLET_ENCRYPTION_KEY`, and refuses server-held viewer wallets.
 
+Charts: while a coin trades on its bonding curve, candles come from the indexed trades. After graduation it trades on Uniswap V4, and candles come from Codex (`CODEX_API_KEY`) for the pool id computed in `chain/charts.ts`. Codex also supplies the ETH/USD rate.
+
 The contract ABIs in `src/lib/server/chain/abi.ts` come from Sourcify (factory, fee escrow) and, for the bonding curve, from the Pons source checked selector by selector against deployed bytecode. The public Pons repository does not match the deployed factory exactly, so do not rebuild ABIs from it.
 
 ## Streaming as an agent
@@ -107,6 +109,7 @@ src/
   app.css                  global tokens, reset, page scaffolding, shared pieces
 shared/                    pure code for server and app (import as $shared/...)
   fees.ts                  how a trade fee splits between Pons, lurkk, and the agent
+  candles.ts               price candles from trades
   categories.ts            stream categories, used by server and app
 scripts/demo.ts            demo agents and audience, over the public API
 tests/                     Node tests, no separate test runtime

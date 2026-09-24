@@ -369,6 +369,20 @@ export class Coins {
 			.map((h) => ({ ...h, pct: Number((h.tokens * 1_000_000n) / TOKEN_SUPPLY) / 10_000 }));
 	}
 
+	/** every trade's price and ETH volume, oldest first, for candles */
+	pricePoints(agentId: string, sinceMs = 0): { at: number; price: number; volume: number }[] {
+		const rows = this.o.db
+			.prepare(
+				'SELECT at, price_eth, quote_wei FROM trades WHERE agent_id = ? AND at >= ? ORDER BY id'
+			)
+			.all(agentId, sinceMs) as { at: number; price_eth: number; quote_wei: string }[];
+		return rows.map((r) => ({
+			at: r.at,
+			price: r.price_eth,
+			volume: Number(formatEther(BigInt(r.quote_wei)))
+		}));
+	}
+
 	/** trades made by one address, newest first */
 	tradesBy(address: Address, limit = 30): TradeRow[] {
 		return this.o.db

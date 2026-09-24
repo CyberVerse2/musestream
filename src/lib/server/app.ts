@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createPublicClient, http } from 'viem';
 import { robinhood } from 'viem/chains';
+import { Charts } from './chain/charts.ts';
 import { Coins } from './chain/coins.ts';
 import { EthPrice } from './chain/prices.ts';
 import { LocalWallets, Wallets } from './chain/wallets.ts';
@@ -75,6 +76,7 @@ function makeCoins(): Coins | null {
 	return new Coins({ db, hub: lurkk.hub, wallets, client, rpcUrl, devFork: mode === 'fork' });
 }
 export const coins = makeCoins();
+export const charts = coins ? new Charts(coins, env.CODEX_API_KEY) : null;
 export const wallets = coins ? coins.walletsStore : null;
 
 // background work: index trades, settle fees. Replaced on dev reloads, never doubled.

@@ -1,5 +1,6 @@
 // The browser's view of the lurkk HTTP API.
 import type { Category } from '$shared/categories';
+import type { Candle, Interval } from '$shared/candles';
 
 export type VideoSource = { kind: 'file'; url: string } | { kind: 'hls'; url: string };
 
@@ -128,6 +129,10 @@ export const api = {
 			}
 		),
 	wallet: () => request<WalletInfo>('/api/wallet'),
+	candles: (handle: string, interval: Interval) =>
+		request<{ ethUsd: number | null; source: string; candles: Candle[] }>(
+			`/api/coins/${handle}/candles?interval=${interval}`
+		),
 	chat: (streamId: string, text: string) =>
 		request<{ message: PublicChat }>(`/api/streams/${streamId}/chat`, {
 			method: 'POST',
