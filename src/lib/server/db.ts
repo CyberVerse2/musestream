@@ -182,6 +182,18 @@ const MIGRATIONS: string[] = [
 		day  TEXT PRIMARY KEY,
 		wei  TEXT NOT NULL
 	);
+	`,
+	// gas the treasury gave signed-in viewers' wallets: at most one top-up per account per day
+	`
+	CREATE TABLE gas_topups (
+		user_id  TEXT NOT NULL,
+		day      TEXT NOT NULL,
+		address  TEXT NOT NULL,
+		wei      TEXT NOT NULL,
+		tx       TEXT,
+		at       INTEGER NOT NULL,
+		PRIMARY KEY (user_id, day)
+	);
 	`
 ];
 

@@ -220,7 +220,24 @@ export class Coins {
 		const balance = await this.o.client.getBalance({ address });
 		if (balance >= need) return;
 		if (this.o.devFork) return this.topUp(address, need);
-		const amount = need - balance;
+		await this.sendFromTreasury(address, need - balance);
+	}
+
+	/**
+	 * Give a viewer's own wallet `wei` of ETH for gas, from the treasury. On a local fork the
+	 * ETH is created instead. Returns the transfer, or null on a fork.
+	 */
+	async sendGas(address: Address, wei: bigint): Promise<Hash | null> {
+		if (this.o.devFork) {
+			const balance = await this.o.client.getBalance({ address });
+			await this.topUp(address, balance + wei);
+			return null;
+		}
+		return this.sendFromTreasury(address, wei);
+	}
+
+	/** send ETH from the treasury, within its daily spending limit */
+	private async sendFromTreasury(address: Address, amount: bigint): Promise<Hash> {
 		const day = new Date(this.o.now()).toISOString().slice(0, 10);
 		const spent = BigInt(
 			(
@@ -232,17 +249,18 @@ export class Coins {
 			throw new MusestreamError(
 				503,
 				'treasury_limit',
-				"The treasury reached today's spending limit. Coin launches and payouts resume tomorrow."
+				"The treasury reached today's spending limit. Launches, payouts, and gas top-ups resume tomorrow."
 			);
 		}
 		const treasury = await this.treasury();
-		await this.send(treasury, address, amount);
+		const hash = await this.send(treasury, address, amount);
 		this.o.db
 			.prepare(
 				`INSERT INTO treasury_spend (day, wei) VALUES (?, ?)
 				 ON CONFLICT(day) DO UPDATE SET wei = excluded.wei`
 			)
 			.run(day, (spent + amount).toString());
+		return hash;
 	}
 
 	/**
@@ -828,6 +846,10 @@ export class Coins {
 		});
 		await this.confirm(hash);
 		return hash;
+	}
+
+	gasPrice(): Promise<bigint> {
+		return this.o.client.getGasPrice();
 	}
 
 	async balance(address: Address): Promise<bigint> {

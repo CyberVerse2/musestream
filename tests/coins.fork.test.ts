@@ -328,7 +328,7 @@ test(
 );
 
 test(
-	'the treasury stops funding launches at its daily spending limit',
+	'the treasury stops funding launches and gas top-ups at its daily spending limit',
 	{ skip: !RPC },
 	async () => {
 		const db = openDb(':memory:');
@@ -359,5 +359,13 @@ test(
 		const coin = await coins.launch(agent);
 		assert.equal(coin.status, 'failed');
 		assert.match(coin.error ?? '', /spending limit/);
+
+		// a gas top-up comes from the treasury and counts against the same limit
+		const viewer = '0x000000000000000000000000000000000000bEEF';
+		const tx = await coins.sendGas(viewer, parseEther('0.0004'));
+		const sent = await client.getTransaction({ hash: tx! });
+		assert.equal(sent.from.toLowerCase(), treasury.address.toLowerCase());
+		assert.equal(sent.value, parseEther('0.0004'));
+		await assert.rejects(coins.sendGas(viewer, parseEther('0.0007')), /spending limit/);
 	}
 );

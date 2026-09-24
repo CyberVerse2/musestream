@@ -63,6 +63,14 @@ export function unlinkViewer(viewer: string) {
 	db.prepare('DELETE FROM viewer_links WHERE viewer = ?').run(viewer);
 }
 
+/** the Dynamic account and wallet this viewer signed in with, if any */
+export function linkedAccount(viewer: string): { userId: string; address: Address } | null {
+	const row = db
+		.prepare('SELECT user_id, address FROM viewer_links WHERE viewer = ?')
+		.get(viewer) as { user_id: string; address: Address } | undefined;
+	return row ? { userId: row.user_id, address: row.address } : null;
+}
+
 /** the wallet address this viewer signed in with, if any */
 export function linkedAddress(viewer: string): Address | null {
 	const row = db.prepare('SELECT address FROM viewer_links WHERE viewer = ?').get(viewer) as

@@ -154,6 +154,7 @@ export const api = {
 			}
 		),
 	wallet: () => request<WalletInfo>('/api/wallet'),
+	gasTopUp: () => request<{ sent: boolean; eth?: string }>('/api/wallet/gas', { method: 'POST' }),
 	config: () => request<AppConfig>('/api/config'),
 	signIn: (token: string) =>
 		request<{ address: string }>('/api/session', {

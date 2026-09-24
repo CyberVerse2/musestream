@@ -46,8 +46,21 @@ export function holdingOf(handle: string) {
 	return wallet.info?.holdings.find((h) => h.handle === handle) ?? null;
 }
 
+/**
+ * Make sure the viewer's own wallet can pay network fees: when it is low on ETH, the treasury
+ * sends a little, at most once a day. The server decides; this only skips the request when
+ * the wallet clearly has enough.
+ */
+async function ensureGas() {
+	const info = wallet.info;
+	if (info && info.ethUsd && info.eth * info.ethUsd >= 0.05) return;
+	const { sent } = await api.gasTopUp();
+	if (sent) await refreshWallet();
+}
+
 /** sign and send a quote's transactions in order, each after the one before it lands */
 async function sendAll(q: Quote) {
+	await ensureGas();
 	const { sendFromWallet } = await import('../wallet/dynamic');
 	for (const tx of q.txs) {
 		await sendFromWallet({
@@ -101,6 +114,7 @@ export async function payGift(streamId: string, gift: string, usd: number) {
 	if (ownWallet()) {
 		const treasury = account.config?.treasury;
 		if (!treasury) throw new Error('Gifts are unavailable right now.');
+		await ensureGas();
 		const { sendFromWallet } = await import('../wallet/dynamic');
 		const amount = usdgFromCents(Math.round(usd * 100));
 		const tx = await sendFromWallet(transferTx(USDG, treasury as `0x${string}`, amount));

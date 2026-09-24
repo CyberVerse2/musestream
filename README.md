@@ -58,6 +58,7 @@ The contract ABIs in `src/lib/server/chain/abi.ts` come from Sourcify (factory, 
 - **Server wallets** (treasury, agents): `WALLET_PROVIDER=local` keeps keys sealed with AES-256-GCM in SQLite; `WALLET_PROVIDER=dynamic` uses Dynamic server wallets (MPC), storing musestream's key share sealed the same way.
 - **Viewers**: with `DYNAMIC_ENVIRONMENT_ID` set, viewers can sign in with Google (redirect flow) or an emailed code, and get an embedded wallet only they control. The browser signs with Dynamic but sends through the app's RPC (on a fork, the fork itself, and the wallet gets test money at sign-in). The server verifies Dynamic's token (`POST /api/session`), looks up the user's wallet address with `DYNAMIC_API_TOKEN` (the token carries only hashes of it), links the address, and from then on the browser signs that viewer's trades and USDG gifts. The server quotes trades (`/api/coins/:handle/quote`) and checks gift payments on chain before counting them.
 - Without sign-in, `CHAIN_MODE=fork` gives each viewer a server-held test wallet; `CHAIN_MODE=live` refuses server-held viewer wallets.
+- A signed-in viewer's wallet pays its own network fees. When it is low on ETH before a gift or trade, the treasury sends it gas (`POST /api/wallet/gas`): enough for `GAS_TOPUP_GAS` (default 600,000) gas at twice the current price, once per account per UTC day, only to a wallet that holds USDG or a coin, and within the treasury's daily limit. The viewer's money never passes through musestream.
 - A signed-in viewer adds money by sending ETH or USDG on Robinhood Chain to their address (Wallet → Add money shows it with a QR code and bridge links). There is no card purchase.
 - `shared/tx.ts` builds every transaction a viewer's own wallet sends, and `shared/curve.ts` mirrors the curve's sell math; the fork test checks both against the chain, to the wei.
 
@@ -77,7 +78,7 @@ Real money is off until you switch it on. In order:
 
 1. Use a Live Dynamic environment (not Sandbox) with the production origins and redirect URL, Robinhood Chain (4663) enabled, and Google on if you want it. Set `DYNAMIC_ENVIRONMENT_ID` and `DYNAMIC_API_TOKEN` from it.
 2. Set `CHAIN_MODE=live` and `CHAIN_RPC_URL` to a Robinhood Chain RPC (not a fork). Set `WALLET_ENCRYPTION_KEY`, and with `WALLET_PROVIDER=dynamic` also `DYNAMIC_WALLET_PASSWORD`. Back up both, with the database: losing them loses the treasury and agent wallets.
-3. Start the server once so it creates the treasury wallet, then send it ETH for launch and payout gas: each launch costs about 0.0005 ETH in Pons's fee plus gas. `TREASURY_DAILY_SPEND_ETH` (default 0.05) caps what the treasury sends for gas each UTC day.
+3. Start the server once so it creates the treasury wallet, then send it ETH for gas: each launch costs about 0.0005 ETH in Pons's fee plus gas, and the treasury also pays settlement gas and viewers' gas top-ups. `TREASURY_DAILY_SPEND_ETH` (default 0.05) caps what the treasury sends for gas each UTC day.
 4. Keep paid video off, or list only the agents you trust in `REACTOR_AGENTS`; the pre-launch check prints the most it can cost per day.
 5. Run `npm run preflight` with the production environment. It reads the chain, the database, and Dynamic's settings, and changes nothing. Go live only when it passes.
 
