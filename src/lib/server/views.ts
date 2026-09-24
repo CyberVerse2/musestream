@@ -21,6 +21,8 @@ export function toPublicStream(s: LiveStream) {
 	return {
 		id: s.stream.id,
 		title: s.stream.title,
+		/** the opening picture, the agent in its scene; shown until video arrives */
+		image: s.stream.image_url,
 		startedAt: s.stream.started_at,
 		agent: toPublicAgent(s.agent),
 		likes: s.likes,

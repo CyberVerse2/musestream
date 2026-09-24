@@ -93,7 +93,7 @@
 					{@const tok = coinOf(a.id)}
 					{@const d = tok ? deltaOf(tok) : 0}
 					<button class="tile press" onclick={() => watchAgent(a.id)} aria-label="Watch {a.name}">
-						<StreamVideo video={a.video} poster={a.img} />
+						<StreamVideo video={a.video} poster={a.scene ?? a.img} />
 						<span class="tile-top">
 							<span class="live-badge">LIVE</span>
 							<span class="tile-viewers"><Eye size={12} weight="bold" />{fmtTok(a.viewers)}</span>

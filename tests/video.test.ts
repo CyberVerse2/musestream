@@ -11,7 +11,13 @@ const clip: VideoProvider = {
 	render: async (s) => ({ kind: 'file', url: `/media/${s.streamId}/clip.mp4` }),
 	stop: async () => {}
 };
-const stream: StreamInfo = { streamId: 's1', agentId: 'a1', avatarUrl: null, handle: 'jess' };
+const stream: StreamInfo = {
+	streamId: 's1',
+	agentId: 'a1',
+	avatarUrl: null,
+	imageUrl: null,
+	handle: 'jess'
+};
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function setup(dailySeconds = 600) {
@@ -29,6 +35,7 @@ function setup(dailySeconds = 600) {
 		idleSeconds: 0.05,
 		budget,
 		mediaDir: '/tmp/musestream-test-media',
+		staticDir: '.',
 		workerDir: '.',
 		workerCommand: ['node', fileURLToPath(new URL('./fixtures/fake-worker.mjs', import.meta.url))],
 		fallback: clip

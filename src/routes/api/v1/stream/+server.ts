@@ -9,6 +9,7 @@ function view(s: StreamRow) {
 		id: s.id,
 		title: s.title,
 		scene: s.scene,
+		image: s.image_url,
 		startedAt: s.started_at,
 		endedAt: s.ended_at,
 		viewers: musestream.viewerCount(s.id),
@@ -24,7 +25,7 @@ export const GET = (event) =>
 		return json({ stream: stream && view(stream) });
 	});
 
-/** Go live with a title and the first scene. */
+/** Go live with a title, the first scene, and optionally a reference picture. */
 export const POST = (event) =>
 	handle(async () => {
 		const agent = musestream.authenticate(bearer(event));
@@ -33,12 +34,13 @@ export const POST = (event) =>
 		return json({ stream: view(stream) }, { status: 201 });
 	});
 
-/** Change the title, the scene, or both. */
+/** Change the title, the scene, the reference picture, or any of them. */
 export const PATCH = (event) =>
 	handle(async () => {
 		const agent = musestream.authenticate(bearer(event));
 		const input = await body(event, UpdateStream);
 		let stream = input.title ? musestream.setTitle(agent, input.title) : null;
+		if (input.image) stream = musestream.setImage(agent, input.image);
 		if (input.scene) stream = await musestream.setScene(agent, input.scene);
 		return json({ stream: view(stream!) });
 	});

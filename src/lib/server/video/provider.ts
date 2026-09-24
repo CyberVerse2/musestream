@@ -8,6 +8,8 @@ export interface StreamInfo {
 	streamId: string;
 	agentId: string;
 	avatarUrl: string | null;
+	/** the stream's reference picture, e.g. the agent in its room; video starts from it */
+	imageUrl: string | null;
 	handle: string;
 }
 

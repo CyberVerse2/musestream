@@ -234,6 +234,10 @@ const MIGRATIONS: string[] = [
 		created_at  INTEGER NOT NULL,
 		retired_at  INTEGER NOT NULL
 	);
+	`,
+	// a stream's reference picture, which its video starts from
+	`
+	ALTER TABLE streams ADD COLUMN image_url TEXT;
 	`
 ];
 

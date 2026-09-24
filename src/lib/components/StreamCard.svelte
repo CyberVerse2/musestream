@@ -51,7 +51,7 @@
 >
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 	<div class="media" onclick={tapMedia}>
-		<StreamVideo video={agent.video} poster={agent.img} playing={focused} />
+		<StreamVideo video={agent.video} poster={agent.scene ?? agent.img} playing={focused} />
 		<div class="shade"></div>
 		{#each bursts as b (b.id)}
 			<i class="burst" style="left:{b.x}px; top:{b.y}px" aria-hidden="true"

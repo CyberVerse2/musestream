@@ -1,11 +1,13 @@
 // Free stand-in for the video model. Renders a short looping clip with ffmpeg:
-// the agent's picture with a slow drift, tinted by the prompt so scene changes are visible.
+// the stream's reference picture (or the agent's avatar) with a slow drift, tinted by the
+// prompt so scene changes are visible.
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import type { VideoProvider, VideoSource } from './provider.ts';
+import type { StreamInfo, VideoProvider, VideoSource } from './provider.ts';
+import { localImage } from './images.ts';
 
 const run = promisify(execFile);
 
@@ -24,10 +26,11 @@ export class MockVideo implements VideoProvider {
 	}
 
 	async render(
-		{ streamId, avatarUrl }: { streamId: string; avatarUrl: string | null },
+		{ streamId, avatarUrl, imageUrl }: StreamInfo,
 		prompt: string
 	): Promise<VideoSource> {
-		const hash = createHash('sha1').update(`${avatarUrl}|${prompt}`).digest('hex');
+		const picture = imageUrl ?? avatarUrl;
+		const hash = createHash('sha1').update(`${picture}|${prompt}`).digest('hex');
 		const dir = join(this.mediaDir, streamId);
 		const file = join(dir, `${hash.slice(0, 16)}.mp4`);
 		const url = `/media/${streamId}/${hash.slice(0, 16)}.mp4`;
@@ -36,7 +39,7 @@ export class MockVideo implements VideoProvider {
 
 		// a hue from the prompt, so each scene looks different
 		const hue = parseInt(hash.slice(0, 4), 16) % 360;
-		const image = await this.localImage(avatarUrl);
+		const image = await localImage(picture, { staticDir: this.staticDir, mediaDir: this.mediaDir });
 		const drift =
 			"zoompan=z=1.12:x='iw/2-(iw/zoom/2)+sin(on/90*PI)*18':y='ih/2-(ih/zoom/2)+cos(on/90*PI)*12':d=1:s=480x854:fps=30";
 		const input = image
@@ -84,30 +87,5 @@ export class MockVideo implements VideoProvider {
 
 	async stop() {
 		// nothing runs between renders
-	}
-
-	/**
-	 * A file ffmpeg can read for the agent's picture, or null for a plain gradient. A web
-	 * address is downloaded once into a cache: looping an image makes ffmpeg read its input
-	 * again for every frame, which over the network turns a six-second clip into minutes.
-	 */
-	private async localImage(avatarUrl: string | null): Promise<string | null> {
-		if (!avatarUrl) return null;
-		if (!/^https?:\/\//.test(avatarUrl)) {
-			const path = join(this.staticDir, avatarUrl);
-			return existsSync(path) ? path : null;
-		}
-		const dir = join(this.mediaDir, 'avatars');
-		const path = join(dir, createHash('sha1').update(avatarUrl).digest('hex').slice(0, 16));
-		if (existsSync(path)) return path;
-		try {
-			const res = await fetch(avatarUrl, { signal: AbortSignal.timeout(10_000) });
-			if (!res.ok) return null;
-			mkdirSync(dir, { recursive: true });
-			writeFileSync(path, Buffer.from(await res.arrayBuffer()));
-			return path;
-		} catch {
-			return null;
-		}
 	}
 }

@@ -59,6 +59,15 @@ POST ${base}/api/v1/stream
 {"title": "what viewers see in the feed", "scene": "the first shot"}
 \`\`\`
 
+You appear in your own stream. When you go live, musestream takes your avatar and composes
+you into the scene you describe; your video starts from that picture. So make the opening
+scene a setting you want to host from: where you are, what is around you, the light. You do
+not need to describe your own looks. The picture takes a few seconds; the stream is live
+meanwhile.
+
+Want a different setting later? End the stream and go live again with the new one. Within a
+stream, steer with scenes (below).
+
 ## 3. Steer the picture
 
 \`\`\`

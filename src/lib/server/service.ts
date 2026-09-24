@@ -4,6 +4,8 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DB } from './db.ts';
 import { Hub } from './hub.ts';
 import type { StreamInfo, VideoProvider, VideoSource } from './video/provider.ts';
+import type { SceneImages } from './video/scene-image.ts';
+import type { Voices } from './voice.ts';
 
 import type { Category } from '../../../shared/categories.ts';
 import { splitGift } from '../../../shared/fees.ts';
@@ -36,6 +38,8 @@ export interface StreamRow {
 	agent_id: string;
 	title: string;
 	scene: string;
+	/** the stream's reference picture: video starts from it */
+	image_url: string | null;
 	started_at: number;
 	ended_at: number | null;
 }
@@ -102,6 +106,7 @@ function streamInfo(stream: StreamRow, agent: AgentRow): StreamInfo {
 		streamId: stream.id,
 		agentId: agent.id,
 		avatarUrl: agent.avatar_url,
+		imageUrl: stream.image_url,
 		handle: agent.handle
 	};
 }
@@ -118,10 +123,22 @@ export class Musestream {
 	private provider: VideoProvider;
 	private now: () => number;
 
-	constructor(db: DB, provider: VideoProvider, now: () => number = Date.now) {
+	/** composes each new stream's opening picture (the agent in its scene); optional */
+	private sceneImages: SceneImages | null;
+	/** speaks the agent's chat lines over its stream; optional */
+	private voices: Voices | null;
+
+	constructor(
+		db: DB,
+		provider: VideoProvider,
+		now: () => number = Date.now,
+		extras: { sceneImages?: SceneImages; voices?: Voices } = {}
+	) {
 		this.db = db;
 		this.provider = provider;
 		this.now = now;
+		this.sceneImages = extras.sceneImages ?? null;
+		this.voices = extras.voices ?? null;
 		provider.onChange?.((streamId, source) => this.acceptVideo(streamId, source));
 	}
 
@@ -247,7 +264,10 @@ export class Musestream {
 		return stream;
 	}
 
-	async goLive(agent: AgentRow, input: { title: string; scene: string }): Promise<StreamRow> {
+	async goLive(
+		agent: AgentRow,
+		input: { title: string; scene: string; image?: string }
+	): Promise<StreamRow> {
 		if (this.currentStream(agent.id)) {
 			throw new MusestreamError(409, 'already_live', 'You are already live. End the stream first.');
 		}
@@ -256,18 +276,21 @@ export class Musestream {
 			agent_id: agent.id,
 			title: input.title,
 			scene: input.scene,
+			image_url: input.image ?? null,
 			started_at: this.now(),
 			ended_at: null
 		};
 		this.db
 			.prepare(
-				`INSERT INTO streams (id, agent_id, title, scene, started_at)
-				 VALUES (@id, @agent_id, @title, @scene, @started_at)`
+				`INSERT INTO streams (id, agent_id, title, scene, image_url, started_at)
+				 VALUES (@id, @agent_id, @title, @scene, @image_url, @started_at)`
 			)
 			.run(stream);
 		this.db.prepare('INSERT INTO likes (stream_id, count) VALUES (?, 0)').run(stream.id);
 		this.hub.emitGlobal({ type: 'stream_started', streamId: stream.id, handle: agent.handle });
-		void this.renderScene(stream, agent, input.scene);
+		void this.openingPicture(stream, agent).then((opening) =>
+			this.renderScene(opening, agent, input.scene)
+		);
 		return stream;
 	}
 
@@ -279,6 +302,31 @@ export class Musestream {
 		const updated = { ...stream, scene };
 		void this.renderScene(updated, agent, scene);
 		return updated;
+	}
+
+	/**
+	 * Without a picture of its own, a new stream gets one composed: the agent, from its
+	 * profile picture, placed in the opening scene. Video renders after it, so it starts there.
+	 */
+	private async openingPicture(stream: StreamRow, agent: AgentRow): Promise<StreamRow> {
+		if (stream.image_url || !this.sceneImages) return stream;
+		const image = await this.sceneImages.compose(agent.avatar_url, stream.scene);
+		if (!image) return stream;
+		const live = this.db
+			.prepare('UPDATE streams SET image_url = ? WHERE id = ? AND ended_at IS NULL')
+			.run(image, stream.id);
+		if (live.changes) this.hub.emit(stream.id, { type: 'image', image });
+		return { ...stream, image_url: image };
+	}
+
+	/**
+	 * Set the stream's reference picture. The next video session starts from it; a session
+	 * already running keeps its picture.
+	 */
+	setImage(agent: AgentRow, image: string | null): StreamRow {
+		const stream = this.requireStream(agent.id);
+		this.db.prepare('UPDATE streams SET image_url = ? WHERE id = ?').run(image, stream.id);
+		return { ...stream, image_url: image };
 	}
 
 	setTitle(agent: AgentRow, title: string): StreamRow {
@@ -331,7 +379,7 @@ export class Musestream {
 	liveStreams(): LiveStream[] {
 		const rows = this.db
 			.prepare(
-				`SELECT s.id, s.agent_id, s.title, s.started_at, s.ended_at,
+				`SELECT s.id, s.agent_id, s.title, s.image_url, s.started_at, s.ended_at,
 				        a.id AS a_id, a.handle, a.name, a.operator, a.category, a.bio, a.avatar_url, a.musebook_url,
 				        a.created_at AS a_created_at, COALESCE(l.count, 0) AS likes
 				 FROM streams s JOIN agents a ON a.id = s.agent_id
@@ -344,6 +392,7 @@ export class Musestream {
 				id: r.id as string,
 				agent_id: r.agent_id as string,
 				title: r.title as string,
+				image_url: r.image_url as string | null,
 				started_at: r.started_at as number,
 				ended_at: null
 			},
@@ -461,7 +510,14 @@ export class Musestream {
 	agentChat(agent: AgentRow, body: string): ChatRow {
 		const stream = this.requireStream(agent.id);
 		this.agentChatLimit.take(agent.id, this.now(), 'messages');
-		return this.addChat(stream.id, agent.handle, 'agent', body);
+		const message = this.addChat(stream.id, agent.handle, 'agent', body);
+		// the host speaks what it writes, for whoever is watching
+		if (this.voices && this.viewerCount(stream.id) > 0) {
+			void this.voices.speak(body).then((voice) => {
+				if (voice) this.hub.emit(stream.id, { type: 'voice', messageId: message.id, voice });
+			});
+		}
+		return message;
 	}
 
 	like(streamId: string, count: number): number {

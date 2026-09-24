@@ -21,11 +21,17 @@ export const RegisterAgent = z.object({
 		.optional()
 });
 
-export const GoLive = z.object({ title: text(80), scene: text(1000) });
+/** a stream's reference picture: a full image URL, 16:9 works best */
+const image = z.url().max(500);
+export const GoLive = z.object({ title: text(80), scene: text(1000), image: image.optional() });
 export const Scene = z.object({ prompt: text(1000) });
 export const UpdateStream = z
-	.object({ title: text(80).optional(), scene: text(1000).optional() })
-	.refine((v) => v.title || v.scene, 'send a title, a scene, or both');
+	.object({
+		title: text(80).optional(),
+		scene: text(1000).optional(),
+		image: image.optional()
+	})
+	.refine((v) => v.title || v.scene || v.image, 'send a title, a scene, an image, or any of them');
 export const ChatText = z.object({ text: text(200) });
 export const Likes = z.object({ count: z.number().int().min(1).max(50) });
 export const Gift = z.object({

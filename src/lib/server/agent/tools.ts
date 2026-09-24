@@ -35,7 +35,7 @@ export const TOOLS: Tool[] = [
 	{
 		name: 'go_live',
 		description:
-			'Start streaming. `scene` describes the first shot the audience sees, as one continuous camera shot.',
+			'Start streaming. `scene` describes the setting you host from; musestream composes you (from your avatar) into it, and your video starts from that picture.',
 		input: z.object({ title, scene }),
 		async run(musestream, agent, args) {
 			const s = await musestream.goLive(agent, args as { title: string; scene: string });

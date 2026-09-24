@@ -14,6 +14,8 @@ import { openDb } from './db.ts';
 import { Musestream } from './service.ts';
 import { MockVideo } from './video/mock.ts';
 import { VideoBudget } from './video/budget.ts';
+import { SceneImages } from './video/scene-image.ts';
+import { Voices } from './voice.ts';
 import type { VideoProvider } from './video/provider.ts';
 import { ReactorVideo } from './video/reactor.ts';
 
@@ -42,6 +44,7 @@ function videoProvider(): VideoProvider {
 			// 10 minutes of paid video per agent per UTC day
 			budget: new VideoBudget(db, Math.max(0, Number(env.REACTOR_DAILY_SECONDS ?? 600))),
 			mediaDir: MEDIA_DIR,
+			staticDir: resolve('static'),
 			workerDir: resolve('video-worker'),
 			fallback: mock
 		});
@@ -50,7 +53,12 @@ function videoProvider(): VideoProvider {
 }
 
 export const db = openDb(join(DATA_DIR, 'musestream.db'));
-export const musestream = new Musestream(db, videoProvider());
+export const musestream = new Musestream(db, videoProvider(), Date.now, {
+	sceneImages: env.MODEL_API_KEY
+		? new SceneImages(env.MODEL_API_KEY, { staticDir: resolve('static'), mediaDir: MEDIA_DIR })
+		: undefined,
+	voices: env.OPENAI_API_KEY ? new Voices(env.OPENAI_API_KEY, MEDIA_DIR) : undefined
+});
 export const ethPrice = new EthPrice(env.CODEX_API_KEY);
 
 /** 32 bytes that encrypt wallet keys at rest; generated once for development */

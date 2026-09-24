@@ -9,6 +9,10 @@ export type StreamEvent =
 	| { type: 'viewers'; viewers: number }
 	| { type: 'likes'; likes: number }
 	| { type: 'title'; title: string }
+	/** the stream's opening picture is ready */
+	| { type: 'image'; image: string }
+	/** the agent's chat line, spoken */
+	| { type: 'voice'; messageId: number; voice: string }
 	/** the stream's coin traded; the payload is what the app shows */
 	| { type: 'coin'; coin: unknown }
 	| { type: 'ended' };

@@ -13,6 +13,7 @@ import { createInterface } from 'node:readline';
 import { join, relative } from 'node:path';
 import type { StreamInfo, VideoProvider, VideoSource } from './provider.ts';
 import type { VideoBudget } from './budget.ts';
+import { localImage } from './images.ts';
 
 /** a session shorter than this is mostly start-up time, which is billed too */
 const MIN_SESSION_SECONDS = 30;
@@ -27,6 +28,8 @@ export interface ReactorOptions {
 	idleSeconds: number;
 	budget: VideoBudget;
 	mediaDir: string;
+	/** where the app's own image paths (`/img/…`) resolve on disk */
+	staticDir: string;
 	workerDir: string;
 	/** the worker's command; the session's arguments are added after it */
 	workerCommand?: string[];
@@ -121,7 +124,7 @@ export class ReactorVideo implements VideoProvider {
 			: clip;
 	}
 
-	private start(stream: StreamInfo, prompt: string): Promise<VideoSource> {
+	private async start(stream: StreamInfo, prompt: string): Promise<VideoSource> {
 		const seconds = Math.floor(
 			Math.min(this.opts.maxSeconds, this.opts.budget.remaining(stream.agentId))
 		);
@@ -132,9 +135,22 @@ export class ReactorVideo implements VideoProvider {
 		const out = join(this.opts.mediaDir, stream.streamId, 'live');
 		const url = `/media/${relative(this.opts.mediaDir, out)}/live.m3u8`;
 		const [cmd, ...cmdArgs] = this.opts.workerCommand ?? ['uv', 'run', '--quiet', 'worker.py'];
+		// the stream's reference picture, else the agent's avatar: Orbis starts from it
+		const image = await localImage(stream.imageUrl ?? stream.avatarUrl, this.opts);
 		const proc = spawn(
 			cmd!,
-			[...cmdArgs, '--out', out, '--prompt', prompt, '--max-seconds', String(seconds)],
+			[
+				...cmdArgs,
+				'--out',
+				out,
+				'--prompt',
+				prompt,
+				'--max-seconds',
+				String(seconds),
+				// the model's music and atmosphere; the agent's voice comes from the server
+				'--audio',
+				...(image ? ['--image', image] : [])
+			],
 			{
 				cwd: this.opts.workerDir,
 				env: { ...process.env, REACTOR_API_KEY: this.opts.apiKey },

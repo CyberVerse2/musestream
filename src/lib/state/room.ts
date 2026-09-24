@@ -4,6 +4,7 @@ import { setCoin } from './market.svelte';
 import { pushChat } from './chat.svelte';
 import { findAgent, refreshDirectory } from './directory.svelte';
 import { showToast } from './notifications.svelte';
+import { ui } from './ui.svelte';
 
 let source: EventSource | null = null;
 let connectedTo: string | null = null;
@@ -19,6 +20,31 @@ function addMessage(agentId: string, m: PublicChat) {
 					? 'chat-gift'
 					: '';
 	pushChat(agentId, m.kind === 'gift' ? `sent ${m.text}` : m.text, cls, m.author, m.id);
+}
+
+/** the host's spoken lines, played one after another while sound is on */
+let voiceQueue: string[] = [];
+let speaking: HTMLAudioElement | null = null;
+function speak(url: string) {
+	if (ui.player.muted) return;
+	voiceQueue.push(url);
+	if (!speaking) playNext();
+}
+function playNext() {
+	const url = voiceQueue.shift();
+	if (!url || ui.player.muted) {
+		speaking = null;
+		voiceQueue = [];
+		return;
+	}
+	speaking = new Audio(url);
+	speaking.onended = speaking.onerror = () => playNext();
+	void speaking.play().catch(() => playNext());
+}
+function hush() {
+	voiceQueue = [];
+	speaking?.pause();
+	speaking = null;
 }
 
 /** Watch one stream. Opening another closes the previous connection. */
@@ -64,6 +90,11 @@ export function watchRoom(agentId: string, streamId: string) {
 		const agent = findAgent(agentId);
 		if (agent) agent.title = title;
 	});
+	on<{ voice: string }>('voice', ({ voice }) => speak(voice));
+	on<{ image: string }>('image', ({ image }) => {
+		const agent = findAgent(agentId);
+		if (agent) agent.scene = image;
+	});
 	on('ended', () => {
 		leaveRoom();
 		void refreshDirectory();
@@ -71,6 +102,7 @@ export function watchRoom(agentId: string, streamId: string) {
 }
 
 export function leaveRoom() {
+	hush();
 	source?.close();
 	source = null;
 	connectedTo = null;

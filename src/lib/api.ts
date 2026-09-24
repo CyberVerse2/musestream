@@ -37,6 +37,8 @@ export interface PublicCoin {
 export interface PublicStream {
 	id: string;
 	title: string;
+	/** the opening picture, the agent in its scene; null until composed */
+	image: string | null;
 	startedAt: number;
 	agent: PublicAgent;
 	likes: number;
