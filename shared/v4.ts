@@ -1,5 +1,6 @@
-// Trading a graduated coin on its Uniswap V4 pool. A Pons coin graduates into one pool:
-// native ETH against the coin, no LP fee, the Pons hook charging the trade fee.
+// Uniswap V4 on Robinhood Chain: a graduated coin's pool, and the USDG/ETH pool that turns
+// the app's dollars into the ETH coins trade in. A Pons coin graduates into one pool: native
+// ETH against the coin, no LP fee, the Pons hook charging the trade fee.
 // The browser and the server build the same transactions here, so the fork test checks
 // exactly what users sign.
 import {
@@ -12,6 +13,7 @@ import {
 	type Address
 } from 'viem';
 import type { TxRequest } from './tx.ts';
+import { USDG } from './usdg.ts';
 
 /** Uniswap's deployments on Robinhood Chain (developers.uniswap.org, v4 deployments) */
 export const POOL_MANAGER: Address = '0x8366a39cc670b4001a1121b8f6a443a643e40951';
@@ -210,24 +212,44 @@ const SWAP_EXACT_IN_SINGLE = 0x06;
 const SETTLE_ALL = 0x0c;
 const TAKE_ALL = 0x0f;
 
-/** one exact-input swap through the Universal Router: pay `amountIn`, take at least `minOut` */
-function swapTx(
-	token: Address,
-	ethIn: boolean,
-	amountIn: bigint,
-	minOut: bigint,
-	deadline: bigint
-) {
-	const key = poolKey(token);
-	const [payIn, takeOut] = ethIn ? [key.currency0, key.currency1] : [key.currency1, key.currency0];
+/** one hop: a pool and which way through it (`zeroForOne`: currency0 in, currency1 out) */
+interface Hop {
+	key: PoolKey;
+	zeroForOne: boolean;
+}
+
+/**
+ * Exact-input swaps through the Universal Router, chained: the first hop takes `amountIn`,
+ * each later hop takes everything the one before it produced (amountIn 0 means "the open
+ * credit"), and the whole trade must deliver at least `minOut` of the last currency.
+ */
+function swapData(hops: Hop[], amountIn: bigint, minOut: bigint, deadline: bigint) {
+	const first = hops[0]!;
+	const last = hops.at(-1)!;
+	const payIn = first.zeroForOne ? first.key.currency0 : first.key.currency1;
+	const takeOut = last.zeroForOne ? last.key.currency1 : last.key.currency0;
 	const input = encodeAbiParameters(
 		[{ type: 'bytes' }, { type: 'bytes[]' }],
 		[
-			encodePacked(['uint8', 'uint8', 'uint8'], [SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL]),
+			encodePacked(hops.map(() => 'uint8').concat('uint8', 'uint8'), [
+				...hops.map(() => SWAP_EXACT_IN_SINGLE),
+				SETTLE_ALL,
+				TAKE_ALL
+			]),
 			[
-				encodeAbiParameters(
-					[exactInputSingleType],
-					[{ poolKey: key, zeroForOne: ethIn, amountIn, amountOutMinimum: minOut, hookData: '0x' }]
+				...hops.map((hop, i) =>
+					encodeAbiParameters(
+						[exactInputSingleType],
+						[
+							{
+								poolKey: hop.key,
+								zeroForOne: hop.zeroForOne,
+								amountIn: i === 0 ? amountIn : 0n,
+								amountOutMinimum: i === hops.length - 1 ? minOut : 0n,
+								hookData: '0x'
+							}
+						]
+					)
 				),
 				encodeAbiParameters([{ type: 'address' }, { type: 'uint256' }], [payIn, amountIn]),
 				encodeAbiParameters([{ type: 'address' }, { type: 'uint256' }], [takeOut, minOut])
@@ -241,27 +263,51 @@ function swapTx(
 	});
 }
 
-/** buy a graduated coin with `wei` ETH, receiving at least `minTokens` */
+/** Uniswap's USDG/ETH pool with a 0.01% fee: the deepest dollar market on Robinhood Chain */
+export function usdgPoolKey(): PoolKey {
+	return { currency0: ETH, currency1: USDG, fee: 100, tickSpacing: 1, hooks: ETH };
+}
+const usdgToEth: Hop = { key: usdgPoolKey(), zeroForOne: false };
+const ethToUsdg: Hop = { key: usdgPoolKey(), zeroForOne: true };
+const coinHop = (token: Address, buy: boolean): Hop => ({ key: poolKey(token), zeroForOne: buy });
+
+/** swap `usdg` for at least `minWei` ETH, e.g. to pay for a coin still on its curve */
+export function usdgToEthTx(usdg: bigint, minWei: bigint, deadline: bigint): TxRequest {
+	return { to: UNIVERSAL_ROUTER, data: swapData([usdgToEth], usdg, minWei, deadline) };
+}
+
+/** swap `wei` ETH for at least `minUsdg`, e.g. the proceeds of a sale on the curve */
+export function ethToUsdgTx(wei: bigint, minUsdg: bigint, deadline: bigint): TxRequest {
+	return { to: UNIVERSAL_ROUTER, value: wei, data: swapData([ethToUsdg], wei, minUsdg, deadline) };
+}
+
+/** buy a graduated coin with `usdg`, through ETH, receiving at least `minTokens` */
 export function poolBuyTx(
 	token: Address,
-	wei: bigint,
+	usdg: bigint,
 	minTokens: bigint,
 	deadline: bigint
 ): TxRequest {
-	return { to: UNIVERSAL_ROUTER, value: wei, data: swapTx(token, true, wei, minTokens, deadline) };
+	return {
+		to: UNIVERSAL_ROUTER,
+		data: swapData([usdgToEth, coinHop(token, true)], usdg, minTokens, deadline)
+	};
 }
 
-/** sell `tokens` of a graduated coin, receiving at least `minWei` ETH */
+/** sell `tokens` of a graduated coin, through ETH, receiving at least `minUsdg` */
 export function poolSellTx(
 	token: Address,
 	tokens: bigint,
-	minWei: bigint,
+	minUsdg: bigint,
 	deadline: bigint
 ): TxRequest {
-	return { to: UNIVERSAL_ROUTER, data: swapTx(token, false, tokens, minWei, deadline) };
+	return {
+		to: UNIVERSAL_ROUTER,
+		data: swapData([coinHop(token, false), ethToUsdg], tokens, minUsdg, deadline)
+	};
 }
 
-/** the router pulls sold coins through Permit2: first the coin approves Permit2, once */
+/** the router pulls tokens (USDG, or a sold coin) through Permit2: first the token approves Permit2, once */
 export function permit2TokenApprovalTx(token: Address): TxRequest {
 	return {
 		to: token,
@@ -273,7 +319,7 @@ export function permit2TokenApprovalTx(token: Address): TxRequest {
 	};
 }
 
-/** then Permit2 lets the router move the coin; `expiration` is a unix time in seconds */
+/** then Permit2 lets the router move the token; `expiration` is a unix time in seconds */
 export function permit2RouterApprovalTx(token: Address, expiration: number): TxRequest {
 	return {
 		to: PERMIT2,

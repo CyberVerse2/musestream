@@ -122,11 +122,11 @@
 					></canvas>
 				{/if}
 				<div class="split">
-					<div>
-						<span>ETH</span><b>{fmtCash(ethUsd)}</b><small>{info.eth.toFixed(4)} ETH</small>
-					</div>
-					<div><span>USDG</span><b>{fmtCash(info.usdg)}</b><small>for gifts</small></div>
+					<div><span>Cash</span><b>{fmtCash(info.usdg)}</b><small>USDG</small></div>
 					<div><span>In coins</span><b>{fmtCash(inCoins)}</b></div>
+					<div>
+						<span>Gas</span><b>{fmtCash(ethUsd)}</b><small>{info.eth.toFixed(5)} ETH</small>
+					</div>
 				</div>
 			</div>
 

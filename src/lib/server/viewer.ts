@@ -5,7 +5,7 @@ import type { WalletRow } from './chain/wallets.ts';
 import { linkedAddress } from './session.ts';
 
 /**
- * On a local fork, each viewer gets a server-held wallet with free test ETH and USDG.
+ * On a local fork, each viewer gets a server-held wallet with free test USDG, and ETH for gas.
  * With real money, viewers must hold their own keys (Dynamic wallets), so this refuses.
  */
 export async function viewerWallet(viewer: string): Promise<WalletRow> {
@@ -24,7 +24,7 @@ export async function viewerWallet(viewer: string): Promise<WalletRow> {
 	const row = await coins.walletsStore.ensure('viewer', viewer);
 	// test money once, when the wallet is made, so balances show what trades and gifts cost
 	if (isNew) {
-		await coins.topUp(row.address, 10n ** 18n);
+		await coins.topUp(row.address, 10n ** 16n); // gas
 		await coins.topUpUsdg(row.address, 100_000_000n); // $100
 	}
 	return row;

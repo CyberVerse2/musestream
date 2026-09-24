@@ -89,16 +89,28 @@ test(
 		await client.request({ method: 'evm_mine' as never, params: [] as never });
 
 		const viewer = await wallets.ensure('viewer', 'lurker-test01');
-		await coins.topUp(viewer.address, parseEther('2'));
+		await coins.topUp(viewer.address, parseEther('0.01'));
+		await coins.topUpUsdg(viewer.address, usdgFromCents(200_000));
 		const before = coins.view(agent.id)!.priceEth;
-		const bought = await coins.buy(viewer, agent.id, parseEther('0.5'));
+		// $1,000 of USDG, swapped to ETH on Uniswap, then spent on the curve
+		const bought = await coins.buy(viewer, agent.id, usdgFromCents(100_000));
 		assert.ok(bought.tokens > 0n);
 		assert.ok(coins.view(agent.id)!.priceEth > before, 'buying raises the price');
 
 		const [held] = await coins.holdings(viewer.address);
 		assert.equal(held?.agentId, agent.id);
+		const usdgBeforeSale = await coins.usdgBalance(viewer.address);
 		const sold = await coins.sell(viewer, agent.id, held!.tokens / 2n);
-		assert.ok(sold.wei > 0n);
+		assert.ok(sold.usdg > 0n);
+		assert.ok(
+			(await coins.usdgBalance(viewer.address)) > usdgBeforeSale,
+			'the sale paid out in USDG'
+		);
+		const gasReserve = 600_000n * (await client.getGasPrice()) * 2n;
+		assert.ok(
+			(await coins.balance(viewer.address)) <= gasReserve,
+			'no more ETH than the gas reserve stayed behind'
+		);
 
 		const trades = coins.recentTrades(agent.id);
 		assert.deepEqual(trades.map((t) => t.side).sort(), ['buy', 'sell']);
@@ -242,16 +254,20 @@ test(
 
 		// buying past 4.2 ETH on the curve graduates the coin into its pool
 		const whale = await wallets.ensure('viewer', 'lurker-whale');
-		await coins.topUp(whale.address, parseEther('20'));
-		for (const eth of ['2', '2', '1.5']) await coins.buy(whale, agent.id, parseEther(eth));
+		await coins.topUp(whale.address, parseEther('0.1'));
+		await coins.topUpUsdg(whale.address, usdgFromCents(2_000_000));
+		for (const usd of [530_000, 530_000, 400_000])
+			await coins.buy(whale, agent.id, usdgFromCents(usd));
 		const view = coins.view(agent.id)!;
 		assert.equal(view.graduated, true);
 		assert.ok(view.priceEth > 0, 'a graduated coin is priced from its pool');
 
 		// a viewer buys and sells on the pool through the Universal Router
 		const viewer = await wallets.ensure('viewer', 'lurker-pool');
-		await coins.topUp(viewer.address, parseEther('2'));
-		const bought = await coins.buy(viewer, agent.id, parseEther('0.5'));
+		await coins.topUp(viewer.address, parseEther('0.01'));
+		await coins.topUpUsdg(viewer.address, usdgFromCents(200_000));
+		// one router transaction: USDG to ETH to the coin
+		const bought = await coins.buy(viewer, agent.id, usdgFromCents(100_000));
 		assert.ok(bought.tokens > 0n);
 		const held = await coins.tokenBalance(agent.id, viewer.address);
 		assert.ok(
@@ -306,8 +322,18 @@ test(
 		assert.equal(swept.length, 1, 'the indexer recorded the pool fee sweep');
 
 		// a sale takes the fee in ETH, which the agent's own wallet may sweep
+		const usdgBeforeSale = await coins.usdgBalance(viewer.address);
 		const sold = await coins.sell(viewer, agent.id, held / 2n);
-		assert.ok(sold.wei > 0n);
+		assert.ok(sold.usdg > 0n);
+		assert.ok(
+			(await coins.usdgBalance(viewer.address)) > usdgBeforeSale,
+			'the sale paid out in USDG'
+		);
+		const gasReserve = 600_000n * (await client.getGasPrice()) * 2n;
+		assert.ok(
+			(await coins.balance(viewer.address)) <= gasReserve,
+			'no more ETH than the gas reserve stayed behind'
+		);
 		const treasury = await coins.treasury();
 		const result = await coins.settleFees();
 		assert.deepEqual(result.failed, []);

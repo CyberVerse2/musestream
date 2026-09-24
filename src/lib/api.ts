@@ -63,8 +63,8 @@ export interface AppConfig {
 }
 export interface Quote {
 	side: 'buy' | 'sell';
-	/** decimal strings; wei for ETH, 18-decimal units for tokens */
-	wei?: string;
+	/** decimal strings: USDG units (6 decimals) and coin units (18 decimals) */
+	usdg?: string;
 	tokens?: string;
 	expected: string;
 	minOut: string;
@@ -138,7 +138,7 @@ export const api = {
 	liveStreams: () => request<{ ethUsd: number | null; streams: PublicStream[] }>('/api/streams'),
 	coin: (handle: string) => request<CoinDetail>(`/api/coins/${handle}`),
 	buy: (handle: string, usd: number) =>
-		request<{ tx: string; eth: string; tokens: string; coin: PublicCoin }>(
+		request<{ tx: string; usd: number; tokens: string; coin: PublicCoin }>(
 			`/api/coins/${handle}/buy`,
 			{
 				method: 'POST',
@@ -146,7 +146,7 @@ export const api = {
 			}
 		),
 	sell: (handle: string, fraction: 0.25 | 0.5 | 1) =>
-		request<{ tx: string; eth: string; tokens: string; coin: PublicCoin }>(
+		request<{ tx: string; usd: number; tokens: string; coin: PublicCoin }>(
 			`/api/coins/${handle}/sell`,
 			{
 				method: 'POST',
@@ -154,6 +154,7 @@ export const api = {
 			}
 		),
 	wallet: () => request<WalletInfo>('/api/wallet'),
+	cashOut: () => request<Pick<Quote, 'txs'>>('/api/wallet/cash-out'),
 	gasTopUp: () => request<{ sent: boolean; eth?: string }>('/api/wallet/gas', { method: 'POST' }),
 	config: () => request<AppConfig>('/api/config'),
 	signIn: (token: string) =>

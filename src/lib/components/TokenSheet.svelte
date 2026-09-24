@@ -76,10 +76,7 @@
 		const res = await sell(id, frac);
 		busy = false;
 		if (!res) return;
-		showToast(
-			'✓',
-			`Sold ${fmtTok(Number(res.tokens))} ${sym} for ${Number(res.eth).toFixed(5)} ETH`
-		);
+		showToast('✓', `Sold ${fmtTok(Number(res.tokens))} ${sym} for ${fmtUsd(res.usd)}`);
 		selling = false;
 	}
 </script>
@@ -184,7 +181,7 @@
 				<li>
 					<span class="side {t.side}">{t.side === 'buy' ? 'Buy' : 'Sell'}</span>
 					<span class="who">{t.trader.toLowerCase() === me ? 'you' : short(t.trader)}</span>
-					<span>{t.eth.toFixed(4)} ETH</span>
+					<span>{fmtUsd(t.eth * (market.ethUsd ?? 0))}</span>
 					<span class="dim">{ago(t.at)}</span>
 				</li>
 			{:else}

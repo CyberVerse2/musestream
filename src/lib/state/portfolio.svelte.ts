@@ -1,10 +1,11 @@
-// The viewer's wallet, from the server: ETH, USDG, coins held, and trades.
+// The viewer's wallet, from the server: USDG (the app's money), coins held, trades, and a
+// little ETH for gas.
 import { api, type Quote, type WalletInfo } from '../api';
 import { showToast } from './notifications.svelte';
 import { setCoin } from './market.svelte';
 import { account, ownWallet } from './account.svelte';
 import { transferTx } from '$shared/tx';
-import { USDG, usdgFromCents } from '$shared/usdg';
+import { USDG, usdgFromCents, usdgToUsd } from '$shared/usdg';
 import { formatEther } from 'viem';
 
 export const wallet = $state({
@@ -31,14 +32,8 @@ export function refreshWallet(): Promise<void> {
 	return inflight;
 }
 
-/** dollars of ETH the viewer can spend, or 0 when unknown */
-export function spendableUsd(): number {
-	const info = wallet.info;
-	return info?.ethUsd ? info.eth * info.ethUsd : 0;
-}
-
-/** dollars of USDG the viewer can gift, or 0 when unknown */
-export function giftableUsd(): number {
+/** the viewer's spendable dollars: their USDG, the app's only money; 0 when unknown */
+export function balanceUsd(): number {
 	return wallet.info?.usdg ?? 0;
 }
 
@@ -58,17 +53,24 @@ async function ensureGas() {
 	if (sent) await refreshWallet();
 }
 
-/** sign and send a quote's transactions in order, each after the one before it lands */
-async function sendAll(q: Quote) {
+/**
+ * Sign and send a trade's transactions in order, each after the one before it lands. Then
+ * swap any ETH the trade left behind, above a gas reserve, back into USDG.
+ */
+async function sendAll(q: Pick<Quote, 'txs'>) {
 	await ensureGas();
 	const { sendFromWallet } = await import('../wallet/dynamic');
-	for (const tx of q.txs) {
-		await sendFromWallet({
-			to: tx.to,
-			data: tx.data,
-			value: tx.value ? BigInt(tx.value) : undefined
-		});
-	}
+	const send = async (txs: Quote['txs']) => {
+		for (const tx of txs) {
+			await sendFromWallet({
+				to: tx.to,
+				data: tx.data,
+				value: tx.value ? BigInt(tx.value) : undefined
+			});
+		}
+	};
+	await send(q.txs);
+	await send((await api.cashOut()).txs);
 }
 
 /** the server sees a signed trade a moment later; refresh after it has had time to index */
@@ -76,13 +78,13 @@ function refreshSoon() {
 	setTimeout(() => void refreshWallet(), 2500);
 }
 
-export async function buy(handle: string, usd: number): Promise<{ tokens: string; eth: string }> {
+export async function buy(handle: string, usd: number): Promise<{ tokens: string; usd: number }> {
 	if (ownWallet()) {
 		const from = account.signedInAs!;
 		const q = await api.quote(handle, { side: 'buy', usd, from });
 		await sendAll(q);
 		refreshSoon();
-		return { tokens: formatEther(BigInt(q.expected)), eth: formatEther(BigInt(q.wei!)) };
+		return { tokens: formatEther(BigInt(q.expected)), usd };
 	}
 	const res = await api.buy(handle, usd);
 	setCoin(handle, res.coin);
@@ -97,7 +99,7 @@ export async function sell(handle: string, fraction: 0.25 | 0.5 | 1) {
 			const q = await api.quote(handle, { side: 'sell', fraction, from });
 			await sendAll(q);
 			refreshSoon();
-			return { tokens: formatEther(BigInt(q.tokens!)), eth: formatEther(BigInt(q.expected)) };
+			return { tokens: formatEther(BigInt(q.tokens!)), usd: usdgToUsd(BigInt(q.expected)) };
 		}
 		const res = await api.sell(handle, fraction);
 		setCoin(handle, res.coin);

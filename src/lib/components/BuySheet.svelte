@@ -2,10 +2,10 @@
 	import AgentAvatar from './AgentAvatar.svelte';
 	import { onDestroy } from 'svelte';
 	import { closeSheet, openReceive } from '$lib/state/ui.svelte';
-	import { buy, refreshWallet, spendableUsd, wallet } from '$lib/state/portfolio.svelte';
+	import { buy, refreshWallet, balanceUsd, wallet } from '$lib/state/portfolio.svelte';
 	import { coinOf, market } from '$lib/state/market.svelte';
 	import { agentById } from '$lib/state/directory.svelte';
-	import { fmtCash, fmtPrice, fmtTok } from '$lib/format';
+	import { fmtCash, fmtPrice, fmtTok, fmtUsd } from '$lib/format';
 	import Sheet from './Sheet.svelte';
 	import { CheckCircle } from 'phosphor-svelte';
 
@@ -15,7 +15,7 @@
 	let usd = $state(25);
 	let busy = $state(false);
 	let error = $state<string | null>(null);
-	let receipt = $state<{ tokens: number; eth: number } | null>(null);
+	let receipt = $state<{ tokens: number; usd: number } | null>(null);
 	let closeTimer: ReturnType<typeof setTimeout>;
 	onDestroy(() => clearTimeout(closeTimer));
 
@@ -27,7 +27,7 @@
 	const eth = $derived(market.ethUsd ? usd / market.ethUsd : 0);
 	// before price impact; the server applies the exact curve math and a 3% slippage limit
 	const tokens = $derived(tok && tok.price > 0 ? (usd * 0.99) / tok.price : 0);
-	const balance = $derived(spendableUsd());
+	const balance = $derived(balanceUsd());
 	const short = $derived(wallet.loaded && usd > balance);
 
 	async function confirm() {
@@ -36,7 +36,7 @@
 		error = null;
 		try {
 			const res = await buy(id, usd);
-			receipt = { tokens: Number(res.tokens), eth: Number(res.eth) };
+			receipt = { tokens: Number(res.tokens), usd: res.usd };
 			closeTimer = setTimeout(closeSheet, 1800);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'The buy did not go through.';
@@ -97,7 +97,7 @@
 			</button>
 		{/if}
 		<p class="note">
-			{wallet.info?.testMoney ? 'Test ETH on a local chain. ' : ''}{tok.graduated
+			{wallet.info?.testMoney ? 'Test money on a local chain. ' : ''}{tok.graduated
 				? 'This coin trades in its Uniswap pool.'
 				: 'The coin moves to its Uniswap pool when 4.2 ETH is in its curve.'}
 		</p>
@@ -105,7 +105,7 @@
 		<div class="done">
 			<CheckCircle size={56} weight="fill" />
 			<h2>You bought ${sym}</h2>
-			<p>+{fmtTok(receipt.tokens)} {sym} for {receipt.eth.toFixed(5)} ETH.</p>
+			<p>+{fmtTok(receipt.tokens)} {sym} for {fmtUsd(receipt.usd)}.</p>
 		</div>
 	{/if}
 </Sheet>

@@ -34,14 +34,6 @@ export function publicTrade(t: TradeRow) {
 	};
 }
 
-/** ETH amount for a dollar amount at the current rate, in wei */
-export async function usdToWei(usd: number): Promise<bigint> {
-	const rate = await ethPrice.usd();
-	if (!rate) throw new Error('No current ETH price. Try again in a minute.');
-	// micro-dollar precision keeps the math in integers
-	return (BigInt(Math.round(usd * 1e6)) * 10n ** 18n) / BigInt(Math.round(rate * 1e6));
-}
-
 /** tell viewers of a live stream that its coin moved */
 export function watchCoinEvents() {
 	return musestream.hub.onGlobal((e) => {

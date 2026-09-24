@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Add money to the viewer's own wallet: its address, as text and as a QR code, and where
-	// to get ETH or USDG onto Robinhood Chain.
+	// to get USDG, the app's only money, onto Robinhood Chain.
 	import qrcode from 'qrcode-generator';
 	import Sheet from './Sheet.svelte';
 	import { closeSheet } from '$lib/state/ui.svelte';
@@ -35,8 +35,8 @@
 <Sheet label="Add money" onclose={closeSheet}>
 	<h2>Add money</h2>
 	<p class="lede">
-		Send ETH or USDG on Robinhood Chain to your wallet. ETH buys coins and pays network fees. USDG
-		pays for gifts.
+		Send USDG on Robinhood Chain to your wallet. It is your balance in the app: it buys coins and
+		pays for gifts. Network fees are covered for you.
 	</p>
 
 	{#if address}
@@ -55,7 +55,8 @@
 	{/if}
 
 	<p class="warn">
-		Send only on Robinhood Chain. Money sent on another network does not arrive in this wallet.
+		Send only USDG, and only on Robinhood Chain. Other tokens do not count toward your balance, and
+		money sent on another network does not arrive in this wallet.
 	</p>
 
 	<h3>Your money is on another network?</h3>

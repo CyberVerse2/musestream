@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import { z } from 'zod';
 import { coins, musestream } from '$lib/server/app';
 import { handle } from '$lib/server/http';
-import { usdToWei } from '$lib/server/market';
+import { usdgFromCents } from '$shared/usdg';
 import { MusestreamError } from '$lib/server/service';
 import type { TradePlan } from '$lib/server/chain/coins';
 import type { Address } from 'viem';
@@ -32,9 +32,9 @@ export const GET = ({ params, url }) =>
 		if (q.side === 'buy') {
 			if (q.usd === undefined)
 				throw new MusestreamError(400, 'invalid', 'usd is required for a buy.');
-			const wei = await usdToWei(q.usd);
-			const plan = await coins.planBuy(agent.id, from, wei);
-			return json({ side: 'buy', wei: wei.toString(), ...wire(plan) });
+			const usdg = usdgFromCents(Math.round(q.usd * 100));
+			const plan = await coins.planBuy(agent.id, from, usdg);
+			return json({ side: 'buy', usdg: usdg.toString(), ...wire(plan) });
 		}
 		if (q.fraction === undefined)
 			throw new MusestreamError(400, 'invalid', 'fraction is required for a sale.');

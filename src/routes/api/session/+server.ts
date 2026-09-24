@@ -15,7 +15,7 @@ export const POST = (event) =>
 		linkViewer(event.locals.viewer, userId, address);
 		// on a local fork, a new wallet gets the same test money as a server-held one
 		if (coins?.testMoney) {
-			await coins.topUp(address, 10n ** 18n);
+			await coins.topUp(address, 10n ** 16n); // gas
 			await coins.topUpUsdg(address, 100_000_000n);
 		}
 		return json({ address });

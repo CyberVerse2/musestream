@@ -39,6 +39,7 @@ import {
 	permit2Abi,
 	permit2RouterApprovalTx,
 	permit2TokenApprovalTx,
+	ethToUsdgTx,
 	poolBuyTx,
 	poolId,
 	poolKey,
@@ -47,7 +48,9 @@ import {
 	ponsHookAbi,
 	priceFromSqrt,
 	quoterAbi,
-	stateViewAbi
+	stateViewAbi,
+	usdgPoolKey,
+	usdgToEthTx
 } from '../../../../shared/v4.ts';
 import type { DB } from '../db.ts';
 import type { Hub } from '../hub.ts';
@@ -72,6 +75,10 @@ const PAYOUT_MIN_USDG = 100_000n; // $0.10
 const LAUNCH_GAS = 4_500_000n;
 const SETTLE_GAS = 400_000n;
 const POOL_GAS = 3_000_000n;
+/** gas a wallet keeps in ETH after a trade; the rest goes back to USDG */
+const GAS_RESERVE = 600_000n;
+/** the USDG/ETH pool is deep; a swap moving it more than this is refused */
+const USDG_SWAP_SLIPPAGE_BPS = 100n;
 /** where USDG keeps balances: `mapping(address => uint256)` at storage slot 1 */
 const USDG_BALANCE_SLOT = 1n;
 
@@ -99,7 +106,7 @@ interface FeeSettlement {
 	tx: Hash | null;
 }
 
-/** the transactions for one trade, in order, and what the trade should return */
+/** the transactions for one trade, in order, and what it should deliver: tokens for a buy, USDG for a sale */
 export interface TradePlan {
 	expected: bigint;
 	minOut: bigint;
@@ -622,34 +629,52 @@ export class Coins {
 	}
 
 	/**
-	 * The transactions that buy `wei` of an agent's coin for `from`, in order, and what they
-	 * should return. On the bonding curve until graduation, then on the Uniswap V4 pool.
-	 * Every trade refuses a price more than 3% worse than quoted.
+	 * The transactions that buy an agent's coin with `usdg` from `from`'s own wallet, in order,
+	 * and how many tokens they should deliver. USDG is the app's money; coins trade in ETH, so
+	 * the wallet swaps through Uniswap's USDG/ETH pool on the way. Approvals come first the
+	 * first time. Every trade refuses a price more than 3% worse than quoted.
 	 */
-	async planBuy(agentId: string, from: Address, wei: bigint): Promise<TradePlan> {
+	async planBuy(agentId: string, from: Address, usdg: bigint): Promise<TradePlan> {
 		const coin = this.liveCoin(agentId);
 		try {
+			const [approvals, deadline] = await Promise.all([
+				this.routerApprovals(from, USDG, usdg),
+				this.deadline()
+			]);
 			if (coin.graduated) {
+				// one router transaction: USDG to ETH to the coin
+				const wei = await this.usdgQuote(false, usdg);
 				const expected = await this.poolQuote(coin.token, true, wei);
 				const minOut = withSlippage(expected, 300n);
 				return {
 					expected,
 					minOut,
-					txs: [poolBuyTx(coin.token, wei, minOut, await this.deadline())]
+					txs: [...approvals, poolBuyTx(coin.token, usdg, minOut, deadline)]
 				};
 			}
+			// swap first, then spend the least the swap may return on the curve; any
+			// remainder stays in the wallet and pays for gas
+			const minWei = withSlippage(await this.usdgQuote(false, usdg), USDG_SWAP_SLIPPAGE_BPS);
 			const { result: expected } = await this.o.client.simulateContract({
 				account: from,
 				address: coin.curve,
 				abi: curveAbi,
 				functionName: 'buy',
-				args: [wei, 0n, from],
-				value: wei,
-				// the quote must not depend on whether the wallet is funded yet
-				stateOverride: [{ address: from, balance: wei + 10n ** 18n }]
+				args: [minWei, 0n, from],
+				value: minWei,
+				// the quote must not depend on whether the wallet holds ETH yet
+				stateOverride: [{ address: from, balance: minWei + 10n ** 18n }]
 			});
 			const minOut = withSlippage(expected, 300n);
-			return { expected, minOut, txs: [buyTx(coin.curve, wei, minOut, from)] };
+			return {
+				expected,
+				minOut,
+				txs: [
+					...approvals,
+					usdgToEthTx(usdg, minWei, deadline),
+					buyTx(coin.curve, minWei, minOut, from)
+				]
+			};
 		} catch (err) {
 			throw new MusestreamError(
 				400,
@@ -659,37 +684,29 @@ export class Coins {
 		}
 	}
 
-	/** the transactions that sell `tokens` of an agent's coin from `from`, approvals first */
+	/**
+	 * The transactions that sell `tokens` of an agent's coin from `from`'s own wallet for USDG,
+	 * and how much USDG they should return. Approvals come first when needed.
+	 */
 	async planSell(agentId: string, from: Address, tokens: bigint): Promise<TradePlan> {
 		const coin = this.liveCoin(agentId);
 		if (tokens === 0n)
 			throw new MusestreamError(409, 'nothing_to_sell', 'This wallet holds none of this coin.');
 		try {
+			const deadline = await this.deadline();
 			if (coin.graduated) {
-				const [expected, toPermit2, [toRouter, expiration]] = await Promise.all([
-					this.poolQuote(coin.token, false, tokens),
-					this.o.client.readContract({
-						address: coin.token,
-						abi: erc20Abi,
-						functionName: 'allowance',
-						args: [from, PERMIT2]
-					}),
-					this.o.client.readContract({
-						address: PERMIT2,
-						abi: permit2Abi,
-						functionName: 'allowance',
-						args: [from, coin.token, UNIVERSAL_ROUTER]
-					})
+				// one router transaction: the coin to ETH to USDG
+				const [approvals, wei] = await Promise.all([
+					this.routerApprovals(from, coin.token, tokens),
+					this.poolQuote(coin.token, false, tokens)
 				]);
-				const deadline = await this.deadline();
-				const txs: TxRequest[] = [];
-				if (toPermit2 < tokens) txs.push(permit2TokenApprovalTx(coin.token));
-				if (toRouter < tokens || BigInt(expiration) < deadline) {
-					txs.push(permit2RouterApprovalTx(coin.token, Number(deadline) + 30 * 86_400));
-				}
+				const expected = await this.usdgQuote(true, wei);
 				const minOut = withSlippage(expected, 300n);
-				txs.push(poolSellTx(coin.token, tokens, minOut, deadline));
-				return { expected, minOut, txs };
+				return {
+					expected,
+					minOut,
+					txs: [...approvals, poolSellTx(coin.token, tokens, minOut, deadline)]
+				};
 			}
 			const [[quote, reserveTokens], feeBps, allowance] = await Promise.all([
 				this.o.client.readContract({
@@ -705,12 +722,13 @@ export class Coins {
 					args: [from, coin.curve]
 				})
 			]);
-			const expected = sellQuote(tokens, { quote, tokens: reserveTokens }, feeBps);
-			const minOut = withSlippage(expected, 300n);
+			// sell on the curve for ETH; `planCashOut` then turns what actually arrived into USDG
+			const wei = sellQuote(tokens, { quote, tokens: reserveTokens }, feeBps);
+			const expected = await this.usdgQuote(true, wei);
 			const txs: TxRequest[] = [];
 			if (allowance < tokens) txs.push(approveTx(coin.token, coin.curve, tokens));
-			txs.push(sellTx(coin.curve, tokens, minOut, from));
-			return { expected, minOut, txs };
+			txs.push(sellTx(coin.curve, tokens, withSlippage(wei, 300n), from));
+			return { expected, minOut: withSlippage(expected, 300n), txs };
 		} catch (err) {
 			throw new MusestreamError(
 				400,
@@ -718,6 +736,66 @@ export class Coins {
 				`No price for this sale: ${revertReason(err)}.`
 			);
 		}
+	}
+
+	/**
+	 * Keep a viewer's balance in dollars: after a trade, swap the wallet's ETH above a gas reserve
+	 * into USDG. Trades on the curve leave ETH behind (a sale's proceeds, a buy's swap buffer);
+	 * this converts exactly what arrived. Returns no plan when there is too little to bother.
+	 */
+	async planCashOut(from: Address): Promise<TradePlan | null> {
+		const [balance, gasPrice, deadline] = await Promise.all([
+			this.o.client.getBalance({ address: from }),
+			this.o.client.getGasPrice(),
+			this.deadline()
+		]);
+		const wei = balance - GAS_RESERVE * gasPrice * 2n;
+		if (wei <= 0n) return null;
+		const expected = await this.usdgQuote(true, wei);
+		// under a cent is not worth the gas
+		if (expected < 10_000n) return null;
+		const minOut = withSlippage(expected, USDG_SWAP_SLIPPAGE_BPS);
+		return { expected, minOut, txs: [ethToUsdgTx(wei, minOut, deadline)] };
+	}
+
+	/** the approvals the Universal Router needs to take `amount` of `token` from `from` */
+	private async routerApprovals(
+		from: Address,
+		token: Address,
+		amount: bigint
+	): Promise<TxRequest[]> {
+		const [toPermit2, [toRouter, expiration], deadline] = await Promise.all([
+			this.o.client.readContract({
+				address: token,
+				abi: erc20Abi,
+				functionName: 'allowance',
+				args: [from, PERMIT2]
+			}),
+			this.o.client.readContract({
+				address: PERMIT2,
+				abi: permit2Abi,
+				functionName: 'allowance',
+				args: [from, token, UNIVERSAL_ROUTER]
+			}),
+			this.deadline()
+		]);
+		const txs: TxRequest[] = [];
+		if (toPermit2 < amount) txs.push(permit2TokenApprovalTx(token));
+		if (toRouter < amount || BigInt(expiration) < deadline) {
+			txs.push(permit2RouterApprovalTx(token, Number(deadline) + 30 * 86_400));
+		}
+		return txs;
+	}
+
+	/** what the USDG/ETH pool pays out now: USDG for `amountIn` wei (`ethIn`), or ETH for USDG */
+	private async usdgQuote(ethIn: boolean, amountIn: bigint): Promise<bigint> {
+		const { result } = await this.o.client.simulateContract({
+			address: V4_QUOTER,
+			abi: quoterAbi,
+			functionName: 'quoteExactInputSingle',
+			args: [{ poolKey: usdgPoolKey(), zeroForOne: ethIn, exactAmount: amountIn, hookData: '0x' }]
+		});
+		return result[0];
 	}
 
 	/** what the pool pays out now for `amountIn` of ETH (`ethIn`) or of the coin */
@@ -737,22 +815,29 @@ export class Coins {
 		return block.timestamp + 20n * 60n;
 	}
 
-	/** buy with `weiIn` ETH from a server-held wallet */
-	buy(wallet: WalletRow, agentId: string, weiIn: bigint) {
+	/** buy with `usdg` from a server-held wallet */
+	buy(wallet: WalletRow, agentId: string, usdg: bigint) {
 		return this.serial(wallet.address, async () => {
-			const plan = await this.planBuy(agentId, wallet.address, weiIn);
+			const plan = await this.planBuy(agentId, wallet.address, usdg);
 			const hash = await this.execute(wallet, plan, 'The buy');
+			await this.cashOut(wallet);
 			return { hash, tokens: plan.expected };
 		});
 	}
 
-	/** sell `tokensIn` tokens from a server-held wallet */
+	/** sell `tokensIn` tokens from a server-held wallet, for USDG */
 	sell(wallet: WalletRow, agentId: string, tokensIn: bigint) {
 		return this.serial(wallet.address, async () => {
 			const plan = await this.planSell(agentId, wallet.address, tokensIn);
 			const hash = await this.execute(wallet, plan, 'The sale');
-			return { hash, wei: plan.expected };
+			await this.cashOut(wallet);
+			return { hash, usdg: plan.expected };
 		});
+	}
+
+	private async cashOut(wallet: WalletRow) {
+		const plan = await this.planCashOut(wallet.address);
+		if (plan) await this.execute(wallet, plan, 'Turning ETH into USDG');
 	}
 
 	/** send a plan's transactions in order; returns the last one, the trade itself */

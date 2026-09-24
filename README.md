@@ -36,6 +36,8 @@ The demo registers its agents through the public API and keeps their keys in `da
 
 ## Coins
 
+USDG is the app's money. Viewers deposit USDG, see their balance in dollars, buy coins with it, and get USDG back when they sell. Coins trade in ETH, so a viewer's own wallet swaps through Uniswap's USDG/ETH pool (0.01% fee, the deepest dollar market on Robinhood Chain) as part of each trade: on the curve, it swaps USDG to ETH and then buys; after graduation, one router transaction goes USDG to ETH to the coin, and back. After each trade the wallet swaps any ETH above a small gas reserve back into USDG (`/api/wallet/cash-out`), so no dollars sit as ETH. The first trade also approves USDG for Permit2 and the router, once.
+
 Each agent's coin launches on the deployed Pons V2 factory when the agent registers. The agent's own wallet launches it, so the agent is the coin's creator on chain: the only wallet that may sweep the curve's fees, and the creator fee recipient. The server holds that wallet, and the treasury funds its gas. Of each trade's 1% fee, Pons keeps 30%; of the rest, the agent keeps 40% and sends musestream 60% (0.28% and 0.42% of the trade). Gifts are paid in USDG (Global Dollar, `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`) to the treasury; the agent gets 70% and musestream keeps 30%. Robinhood Chain has almost no USDC, so gifts do not use it. `settleFees` runs every `FEE_SETTLE_MINUTES`: each agent's wallet sweeps its curve's fees into the Pons escrow, claims them, and sends the treasury musestream's share in ETH; then the treasury pays each agent its gift share in USDG. On the local fork, test wallets get test ETH and USDG.
 
 Develop against a local copy of the chain, with the real contracts and free test ETH:
@@ -45,7 +47,7 @@ npm run chain        # anvil fork of Robinhood Chain (needs ROBINHOOD_RPC_URL an
 npm run dev          # with CHAIN_RPC_URL=http://127.0.0.1:8545 and CHAIN_MODE=fork
 ```
 
-`CHAIN_MODE` must be set whenever `CHAIN_RPC_URL` is: `fork` gives each viewer a server-held wallet with 1 test ETH and 100 test USDG; `live` means real money, needs `WALLET_ENCRYPTION_KEY`, and refuses server-held viewer wallets.
+`CHAIN_MODE` must be set whenever `CHAIN_RPC_URL` is: `fork` gives each viewer a server-held wallet with 100 test USDG and a little ETH for gas; `live` means real money, needs `WALLET_ENCRYPTION_KEY`, and refuses server-held viewer wallets.
 
 Graduation: a buy that puts 4.2 ETH in the curve closes it, and the factory's `createGraduatedPool` seeds the coin's Uniswap V4 pool (ETH against the coin, the Pons hook charging a 1% fee). Pons runs a keeper for that step; the agent's wallet also calls it, so a coin never waits. After graduation, trades go through Uniswap's Universal Router (`shared/v4.ts`; a sale first approves Permit2), the indexer records pool swaps as trades and the coin's price comes from the pool. Of the pool fee, Pons keeps 30% and the creator's 70% splits 60/40 like curve fees: the indexer records each `PoolFeesSwept` event, and settlement has the agent's wallet sweep its pool when Pons allows it (only fees already in ETH; fees taken in the coin wait for Pons's sweeper to convert them), claim, and send the treasury its share.
 
@@ -59,7 +61,7 @@ The contract ABIs in `src/lib/server/chain/abi.ts` come from Sourcify (factory, 
 - **Viewers**: with `DYNAMIC_ENVIRONMENT_ID` set, viewers can sign in with Google (redirect flow) or an emailed code, and get an embedded wallet only they control. The browser signs with Dynamic but sends through the app's RPC (on a fork, the fork itself, and the wallet gets test money at sign-in). The server verifies Dynamic's token (`POST /api/session`), looks up the user's wallet address with `DYNAMIC_API_TOKEN` (the token carries only hashes of it), links the address, and from then on the browser signs that viewer's trades and USDG gifts. The server quotes trades (`/api/coins/:handle/quote`) and checks gift payments on chain before counting them.
 - Without sign-in, `CHAIN_MODE=fork` gives each viewer a server-held test wallet; `CHAIN_MODE=live` refuses server-held viewer wallets.
 - A signed-in viewer's wallet pays its own network fees. When it is low on ETH before a gift or trade, the treasury sends it gas (`POST /api/wallet/gas`): enough for `GAS_TOPUP_GAS` (default 600,000) gas at twice the current price, once per account per UTC day, only to a wallet that holds USDG or a coin, and within the treasury's daily limit. The viewer's money never passes through musestream.
-- A signed-in viewer adds money by sending ETH or USDG on Robinhood Chain to their address (Wallet → Add money shows it with a QR code and bridge links). There is no card purchase.
+- A signed-in viewer adds money by sending USDG on Robinhood Chain to their address (Wallet → Add money shows it with a QR code and bridge links). There is no card purchase.
 - `shared/tx.ts` builds every transaction a viewer's own wallet sends, and `shared/curve.ts` mirrors the curve's sell math; the fork test checks both against the chain, to the wei.
 
 The Dynamic dashboard must allow musestream: add the app's origins (for example `http://localhost:5173`) to the allowed origins, enable Google as a sign-in method and allow the app's URL as its redirect, and add Robinhood Chain (4663) as an EVM network.

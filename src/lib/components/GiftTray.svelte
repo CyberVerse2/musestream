@@ -2,7 +2,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import type { Agent } from '$lib/data';
 	import { ui } from '$lib/state/ui.svelte';
-	import { giftableUsd, payGift, refreshWallet, wallet } from '$lib/state/portfolio.svelte';
+	import { balanceUsd, payGift, refreshWallet, wallet } from '$lib/state/portfolio.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import { fmtCash } from '$lib/format';
 	import { viewport } from '$lib/media.svelte';
@@ -37,8 +37,8 @@
 	});
 
 	function send(gift: GiftChoice) {
-		if (wallet.info && gift.usd > giftableUsd()) {
-			showToast('⚠', `Not enough USDG for ${gift.name}`);
+		if (wallet.info && gift.usd > balanceUsd()) {
+			showToast('⚠', `Not enough balance for ${gift.name}`);
 			return;
 		}
 		payGift(agent.streamId, gift.id, gift.usd).catch((err: unknown) =>
@@ -114,7 +114,7 @@
 	>
 		<header class="gift-head">
 			<span
-				>Send {agent.name} a gift {#if wallet.info}<small>{fmtCash(giftableUsd())} USDG</small
+				>Send {agent.name} a gift {#if wallet.info}<small>Balance {fmtCash(balanceUsd())}</small
 					>{/if}</span
 			>
 			<button class="gift-close" onclick={() => (ui.giftsOpen = false)} aria-label="Close gifts"
