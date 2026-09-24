@@ -2,7 +2,7 @@
 	import AgentAvatar from './AgentAvatar.svelte';
 	import { onMount } from 'svelte';
 	import { refreshWallet, wallet } from '$lib/state/portfolio.svelte';
-	import { ui, openToken, openSignIn } from '$lib/state/ui.svelte';
+	import { ui, openToken, openSignIn, openReceive } from '$lib/state/ui.svelte';
 	import { canSignIn } from '$lib/state/account.svelte';
 	import { market } from '$lib/state/market.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
@@ -135,6 +135,8 @@
 					<p>Sign in to trade from a wallet only you control.</p>
 					<button class="btn-lime" onclick={openSignIn}>Sign in</button>
 				</div>
+			{:else if info.ownWallet}
+				<button class="btn-lime add" onclick={openReceive}>Add money</button>
 			{/if}
 
 			<h2 class="section-title">Coins <small>{rows.length} held</small></h2>
@@ -265,6 +267,10 @@
 	.split small {
 		font-size: 11px;
 		color: var(--mut-2);
+	}
+	.add {
+		width: 100%;
+		margin-top: 16px;
 	}
 	.signin {
 		display: flex;

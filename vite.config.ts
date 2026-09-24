@@ -13,9 +13,9 @@ export default defineConfig({
 			'viem',
 			'hls.js',
 			'@dynamic-labs-sdk/client',
-			'@dynamic-labs-sdk/client/waas',
 			'@dynamic-labs-sdk/evm',
-			'@dynamic-labs-sdk/evm/viem'
+			'@dynamic-labs-sdk/evm/viem',
+			'qrcode-generator'
 		]
 	}
 });

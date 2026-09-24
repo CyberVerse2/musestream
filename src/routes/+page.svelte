@@ -12,6 +12,7 @@
 	import AgentSheet from '$lib/components/AgentSheet.svelte';
 	import StreamOptions from '$lib/components/StreamOptions.svelte';
 	import SignInSheet from '$lib/components/SignInSheet.svelte';
+	import ReceiveSheet from '$lib/components/ReceiveSheet.svelte';
 	import { loadAccount } from '$lib/state/account.svelte';
 	import Toasts from '$lib/components/Toasts.svelte';
 
@@ -41,6 +42,8 @@
 	<AppShell />
 	{#if ui.sheet?.kind === 'signin'}
 		<SignInSheet />
+	{:else if ui.sheet?.kind === 'receive'}
+		<ReceiveSheet />
 	{:else if ui.sheet && !findAgent(ui.sheet.id)}
 		<!-- the agent went offline; its sheet has nothing to show -->
 	{:else if ui.sheet?.kind === 'buy'}

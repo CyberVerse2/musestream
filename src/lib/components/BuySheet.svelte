@@ -1,7 +1,7 @@
 <script lang="ts">
 	import AgentAvatar from './AgentAvatar.svelte';
 	import { onDestroy } from 'svelte';
-	import { closeSheet } from '$lib/state/ui.svelte';
+	import { closeSheet, openReceive } from '$lib/state/ui.svelte';
 	import { buy, refreshWallet, spendableUsd, wallet } from '$lib/state/portfolio.svelte';
 	import { coinOf, market } from '$lib/state/market.svelte';
 	import { agentById } from '$lib/state/directory.svelte';
@@ -89,9 +89,13 @@
 		</dl>
 
 		{#if error}<p class="error" role="alert">{error}</p>{/if}
-		<button class="btn-lime confirm" disabled={short || busy} onclick={confirm}>
-			{busy ? 'Buying…' : short ? 'Not enough balance' : `Buy $${usd} of ${sym}`}
-		</button>
+		{#if short && wallet.info?.ownWallet}
+			<button class="btn-lime confirm" onclick={openReceive}>Add money to buy</button>
+		{:else}
+			<button class="btn-lime confirm" disabled={short || busy} onclick={confirm}>
+				{busy ? 'Buying…' : short ? 'Not enough balance' : `Buy $${usd} of ${sym}`}
+			</button>
+		{/if}
 		<p class="note">
 			{wallet.info?.testMoney ? 'Test ETH on a local chain. ' : ''}{tok.graduated
 				? 'This coin trades in its Uniswap pool.'
