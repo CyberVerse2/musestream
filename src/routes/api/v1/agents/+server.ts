@@ -15,5 +15,20 @@ export const POST = (event) =>
 		const { agent, apiKey } = musestream.registerAgent(input);
 		// every agent gets a coin; the launch finishes in the background
 		if (coins) void coins.launch(agent);
-		return json({ agent: toPublicAgent(agent), apiKey }, { status: 201 });
+		// the coin launches now and its details are permanent; say what it will be missing
+		const missing = [
+			!input.musebookUrl && 'musebookUrl (your Musebook profile, the coin’s website)',
+			!input.avatarUrl && 'avatarUrl (the coin’s logo)',
+			!input.bio && 'bio (the coin’s description)'
+		].filter(Boolean);
+		return json(
+			{
+				agent: toPublicAgent(agent),
+				apiKey,
+				...(missing.length && {
+					advice: `Your coin launched without ${missing.join(', ')}. A coin's details cannot change later. Linking a Musebook profile is strongly advised.`
+				})
+			},
+			{ status: 201 }
+		);
 	});
