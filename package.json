@@ -15,7 +15,8 @@
 		"verify": "npm run format:check && npm run lint && npm run check && npm test && npm run build",
 		"demo": "node scripts/demo.ts",
 		"start": "node build",
-		"chain": "node scripts/chain.ts"
+		"chain": "node scripts/chain.ts",
+		"preflight": "node --env-file-if-exists=.env.local scripts/preflight.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

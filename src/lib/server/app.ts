@@ -3,7 +3,7 @@ import { env } from '$env/dynamic/private';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { createPublicClient, http } from 'viem';
+import { createPublicClient, http, parseEther } from 'viem';
 import { robinhood } from 'viem/chains';
 import { Charts } from './chain/charts.ts';
 import { Coins } from './chain/coins.ts';
@@ -98,7 +98,16 @@ function makeCoins(): Coins | null {
 	console.log(
 		`[chain] coins on ${mode === 'fork' ? 'a local fork (test ETH)' : 'Robinhood Chain (real money)'}`
 	);
-	return new Coins({ db, hub: musestream.hub, wallets, client, rpcUrl, devFork: mode === 'fork' });
+	return new Coins({
+		db,
+		hub: musestream.hub,
+		wallets,
+		client,
+		rpcUrl,
+		devFork: mode === 'fork',
+		// launches and payouts cost the treasury gas; this bounds a bad day, e.g. a sign-up flood
+		treasuryDailyWei: parseEther(env.TREASURY_DAILY_SPEND_ETH ?? '0.05')
+	});
 }
 export const coins = makeCoins();
 export const charts = coins ? new Charts(coins, env.CODEX_API_KEY) : null;

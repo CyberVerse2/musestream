@@ -326,3 +326,38 @@ test(
 		assert.equal(coins.earnings(agent.id).eth.unpaid, 0n);
 	}
 );
+
+test(
+	'the treasury stops funding launches at its daily spending limit',
+	{ skip: !RPC },
+	async () => {
+		const db = openDb(':memory:');
+		const musestream = new Musestream(db, video);
+		const client = createPublicClient({ chain: robinhood, transport: http(RPC) });
+		const wallets = new Wallets(db, await walletProvider());
+		// real-money rules on the fork: the treasury pays gas, capped at 0.001 ETH a day
+		const coins = new Coins({
+			db,
+			hub: musestream.hub,
+			wallets,
+			client,
+			rpcUrl: RPC!,
+			devFork: false,
+			treasuryDailyWei: parseEther('0.001')
+		});
+		const treasury = await coins.treasury();
+		await client.request({
+			method: 'anvil_setBalance' as never,
+			params: [treasury.address, '0x8AC7230489E80000'] as never
+		});
+		const { agent } = musestream.registerAgent({
+			handle: `c${randomBytes(3).toString('hex')}`,
+			name: 'Cap',
+			operator: 'o',
+			category: 'Talk'
+		});
+		const coin = await coins.launch(agent);
+		assert.equal(coin.status, 'failed');
+		assert.match(coin.error ?? '', /spending limit/);
+	}
+);

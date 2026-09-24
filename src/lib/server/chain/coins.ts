@@ -129,6 +129,8 @@ export interface CoinsOptions {
 	rpcUrl: string;
 	/** a local fork: wallets may be topped up for free with anvil_setBalance */
 	devFork: boolean;
+	/** the most ETH the treasury may send to fund gas in one UTC day; unlimited when unset */
+	treasuryDailyWei?: bigint;
 	now?: () => number;
 }
 
@@ -155,7 +157,8 @@ function revertReason(err: unknown): string {
 }
 
 export class Coins {
-	private o: Required<CoinsOptions>;
+	private o: Required<Omit<CoinsOptions, 'treasuryDailyWei'>> &
+		Pick<CoinsOptions, 'treasuryDailyWei'>;
 	/** Pons's share of each curve's fee, read once per curve */
 	private protocolBps = new Map<string, bigint>();
 	private graduationThreshold: bigint | null = null;
@@ -217,8 +220,54 @@ export class Coins {
 		const balance = await this.o.client.getBalance({ address });
 		if (balance >= need) return;
 		if (this.o.devFork) return this.topUp(address, need);
+		const amount = need - balance;
+		const day = new Date(this.o.now()).toISOString().slice(0, 10);
+		const spent = BigInt(
+			(
+				this.o.db.prepare('SELECT wei FROM treasury_spend WHERE day = ?').get(day) as
+					{ wei: string } | undefined
+			)?.wei ?? '0'
+		);
+		if (this.o.treasuryDailyWei !== undefined && spent + amount > this.o.treasuryDailyWei) {
+			throw new MusestreamError(
+				503,
+				'treasury_limit',
+				"The treasury reached today's spending limit. Coin launches and payouts resume tomorrow."
+			);
+		}
 		const treasury = await this.treasury();
-		await this.send(treasury, address, need - balance);
+		await this.send(treasury, address, amount);
+		this.o.db
+			.prepare(
+				`INSERT INTO treasury_spend (day, wei) VALUES (?, ?)
+				 ON CONFLICT(day) DO UPDATE SET wei = excluded.wei`
+			)
+			.run(day, (spent + amount).toString());
+	}
+
+	/**
+	 * Hold a named lease so only one server process does a job at a time, even when several
+	 * share the database. Returns false when another process holds it.
+	 */
+	private readonly holder = randomBytes(8).toString('hex');
+	private takeLease(name: string, ms: number): boolean {
+		const now = this.o.now();
+		this.o.db
+			.prepare(
+				`INSERT INTO leases (name, holder, until) VALUES (@name, @holder, @until)
+				 ON CONFLICT(name) DO UPDATE SET holder = @holder, until = @until
+				 WHERE leases.until < @now OR leases.holder = @holder`
+			)
+			.run({ name, holder: this.holder, until: now + ms, now });
+		const row = this.o.db.prepare('SELECT holder FROM leases WHERE name = ?').get(name) as {
+			holder: string;
+		};
+		return row.holder === this.holder;
+	}
+	private releaseLease(name: string) {
+		this.o.db
+			.prepare('UPDATE leases SET until = 0 WHERE name = ? AND holder = ?')
+			.run(name, this.holder);
 	}
 
 	/** development only: give a wallet test USDG on the local fork, by writing its balance */
@@ -1009,6 +1058,16 @@ export class Coins {
 	 * Returns what happened, for logs.
 	 */
 	async settleFees() {
+		// two processes settling together would pay the same fees twice
+		if (!this.takeLease('settle', 30 * 60_000))
+			return { fees: [], gifts: [], failed: [], skipped: true };
+		try {
+			return { ...(await this.settleFeesNow()), skipped: false };
+		} finally {
+			this.releaseLease('settle');
+		}
+	}
+	private async settleFeesNow() {
 		await this.sync();
 		const treasury = await this.treasury();
 		const coins = this.o.db

@@ -170,6 +170,18 @@ const MIGRATIONS: string[] = [
 		seconds   REAL NOT NULL,
 		PRIMARY KEY (agent_id, day)
 	);
+	`,
+	// jobs only one process may run at a time, and what the treasury spends on gas each day
+	`
+	CREATE TABLE leases (
+		name    TEXT PRIMARY KEY,
+		holder  TEXT NOT NULL,
+		until   INTEGER NOT NULL
+	);
+	CREATE TABLE treasury_spend (
+		day  TEXT PRIMARY KEY,
+		wei  TEXT NOT NULL
+	);
 	`
 ];
 
