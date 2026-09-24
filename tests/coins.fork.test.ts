@@ -279,6 +279,25 @@ test(
 			'the shared sell math matches the contract to the wei'
 		);
 		assert.ok((await client.getBalance({ address: account.address })) > before);
+
+		// retire the ETH coin and relaunch against META: the new coin starts clean, and the old
+		// coin's fees stay the agent's and are settled in ETH first
+		const settled = await coins.settleFees();
+		assert.deepEqual(settled.failed, []);
+		const paidBefore = coins.earnings(agent.id).eth.paid;
+		assert.equal(
+			coins.earnings(agent.id).eth.unpaid,
+			0n,
+			'the old coin is settled before retiring'
+		);
+		const retired = coins.retireCoin(agent.id);
+		const fresh = await coins.launch(agent);
+		assert.equal(fresh.status, 'live', fresh.error ?? '');
+		assert.notEqual(fresh.token, retired.token);
+		assert.equal(coins.view(agent.id)!.pair.symbol, 'META');
+		assert.deepEqual(coins.recentTrades(agent.id), [], 'the new coin has no trades yet');
+		assert.equal(coins.view(agent.id)!.holders, 0);
+		assert.equal(coins.earnings(agent.id).eth.paid, paidBefore, 'old earnings stay in ETH');
 	}
 );
 

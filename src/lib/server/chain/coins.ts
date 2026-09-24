@@ -586,6 +586,36 @@ export class Coins {
 		});
 	}
 
+	/**
+	 * Retire an agent's coin so a new one can launch in its place. The old coin keeps trading on
+	 * chain, but musestream stops indexing, showing, and settling it, so collect its fees first
+	 * (`settleFees`). Its record moves to retired_coins; its trades and fee records stay.
+	 */
+	retireCoin(agentId: string) {
+		const coin = this.coinFor(agentId);
+		if (!coin?.token || !coin.curve) {
+			throw new MusestreamError(409, 'no_coin', 'This agent has no launched coin to retire.');
+		}
+		this.o.db.transaction(() => {
+			this.o.db
+				.prepare(
+					`INSERT INTO retired_coins (agent_id, token, curve, pair, launch_tx, created_at, retired_at)
+					 VALUES (?, ?, ?, ?, ?, ?, ?)`
+				)
+				.run(
+					agentId,
+					coin.token,
+					coin.curve,
+					coin.pair,
+					coin.launch_tx,
+					coin.created_at,
+					this.o.now()
+				);
+			this.o.db.prepare('DELETE FROM coins WHERE agent_id = ?').run(agentId);
+		})();
+		return coin;
+	}
+
 	view(agentId: string): CoinView | null {
 		const coin = this.coinFor(agentId);
 		if (!coin) return null;
@@ -607,10 +637,8 @@ export class Coins {
 				: 0;
 		const holders = (
 			this.o.db
-				.prepare(
-					`SELECT COUNT(DISTINCT trader) AS n FROM trades WHERE agent_id = ? AND side = 'buy'`
-				)
-				.get(agentId) as { n: number }
+				.prepare(`SELECT COUNT(DISTINCT trader) AS n FROM trades WHERE token = ? AND side = 'buy'`)
+				.get(coin.token) as { n: number }
 		).n;
 		return {
 			status: coin.status,
@@ -628,15 +656,19 @@ export class Coins {
 
 	recentTrades(agentId: string, limit = 20): TradeRow[] {
 		return this.o.db
-			.prepare('SELECT * FROM trades WHERE agent_id = ? ORDER BY id DESC LIMIT ?')
-			.all(agentId, limit) as TradeRow[];
+			.prepare('SELECT * FROM trades WHERE token = ? ORDER BY id DESC LIMIT ?')
+			.all(this.coinFor(agentId)?.token ?? null, limit) as TradeRow[];
 	}
 
 	/** largest holders from indexed trades: net tokens bought minus sold, per wallet */
 	topHolders(agentId: string, limit = 10): { trader: Address; tokens: bigint; pct: number }[] {
 		const rows = this.o.db
-			.prepare('SELECT trader, side, tokens FROM trades WHERE agent_id = ?')
-			.all(agentId) as { trader: Address; side: 'buy' | 'sell'; tokens: string }[];
+			.prepare('SELECT trader, side, tokens FROM trades WHERE token = ?')
+			.all(this.coinFor(agentId)?.token ?? null) as {
+			trader: Address;
+			side: 'buy' | 'sell';
+			tokens: string;
+		}[];
 		const net = new Map<string, { trader: Address; tokens: bigint }>();
 		for (const r of rows) {
 			const key = r.trader.toLowerCase();
@@ -654,10 +686,12 @@ export class Coins {
 	/** every trade's price and ETH volume, oldest first, for candles */
 	pricePoints(agentId: string, sinceMs = 0): { at: number; price: number; volume: number }[] {
 		const rows = this.o.db
-			.prepare(
-				'SELECT at, price, quote_amount FROM trades WHERE agent_id = ? AND at >= ? ORDER BY id'
-			)
-			.all(agentId, sinceMs) as { at: number; price: number; quote_amount: string }[];
+			.prepare('SELECT at, price, quote_amount FROM trades WHERE token = ? AND at >= ? ORDER BY id')
+			.all(this.coinFor(agentId)?.token ?? null, sinceMs) as {
+			at: number;
+			price: number;
+			quote_amount: string;
+		}[];
 		return rows.map((r) => ({
 			at: r.at,
 			price: r.price,
@@ -675,8 +709,8 @@ export class Coins {
 	/** price after each trade, oldest first, for charts */
 	priceHistory(agentId: string, limit = 120): { at: number; price: number }[] {
 		const rows = this.o.db
-			.prepare('SELECT at, price FROM trades WHERE agent_id = ? ORDER BY id DESC LIMIT ?')
-			.all(agentId, limit) as { at: number; price: number }[];
+			.prepare('SELECT at, price FROM trades WHERE token = ? ORDER BY id DESC LIMIT ?')
+			.all(this.coinFor(agentId)?.token ?? null, limit) as { at: number; price: number }[];
 		return rows.reverse().map((r) => ({ at: r.at, price: r.price }));
 	}
 
@@ -1104,10 +1138,13 @@ export class Coins {
 
 	private async syncOnce() {
 		const coins = this.o.db
-			.prepare(`SELECT agent_id, curve FROM coins WHERE status = 'live' AND curve IS NOT NULL`)
-			.all() as { agent_id: string; curve: Address }[];
+			.prepare(
+				`SELECT agent_id, curve, token FROM coins WHERE status = 'live' AND curve IS NOT NULL`
+			)
+			.all() as { agent_id: string; curve: Address; token: Address }[];
 		if (!coins.length) return;
 		const byCurve = new Map(coins.map((c) => [c.curve.toLowerCase(), c.agent_id]));
+		const coinToken = new Map(coins.map((c) => [c.agent_id, c.token]));
 		// viem caches the block number for seconds by default; the indexer needs the real head
 		const head = await this.o.client.getBlockNumber({ cacheTime: 0 });
 		const cursor = this.o.db
@@ -1153,11 +1190,12 @@ export class Coins {
 				const inserted = this.o.db
 					.prepare(
 						`INSERT OR IGNORE INTO trades
-						 (agent_id, side, trader, quote_amount, tokens, fee_amount, price, block, tx, log_index, at)
-						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+						 (agent_id, token, side, trader, quote_amount, tokens, fee_amount, price, block, tx, log_index, at)
+						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 					)
 					.run(
 						agentId,
+						coinToken.get(agentId)!,
 						buy ? 'buy' : 'sell',
 						a.recipient,
 						quote.toString(),
@@ -1271,11 +1309,12 @@ export class Coins {
 			const inserted = this.o.db
 				.prepare(
 					`INSERT OR IGNORE INTO trades
-					 (agent_id, side, trader, quote_amount, tokens, fee_amount, price, block, tx, log_index, at)
-					 VALUES (?, ?, ?, ?, ?, '0', ?, ?, ?, ?, ?)`
+					 (agent_id, token, side, trader, quote_amount, tokens, fee_amount, price, block, tx, log_index, at)
+					 VALUES (?, ?, ?, ?, ?, ?, '0', ?, ?, ?, ?, ?)`
 				)
 				.run(
 					agentId,
+					coin.token,
 					buy ? 'buy' : 'sell',
 					trader,
 					abs(pairAmount).toString(),
@@ -1289,18 +1328,20 @@ export class Coins {
 			if (inserted.changes) touched.add(agentId);
 		}
 		for (const log of sweeps) {
-			const agentId = byPool.get(log.args.poolId!)?.agentId;
-			if (!agentId || log.blockNumber === null || log.transactionHash === null) continue;
+			const swept = byPool.get(log.args.poolId!);
+			if (!swept || log.blockNumber === null || log.transactionHash === null) continue;
+			const agentId = swept.agentId;
 			const creator = log.args.creatorAmount!;
 			const split = splitCreatorShare(creator);
 			this.o.db
 				.prepare(
 					`INSERT OR IGNORE INTO pool_fees
-					 (agent_id, creator_amount, agent_amount, treasury_amount, block, tx, log_index)
-					 VALUES (?, ?, ?, ?, ?, ?, ?)`
+					 (agent_id, token, creator_amount, agent_amount, treasury_amount, block, tx, log_index)
+					 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 				)
 				.run(
 					agentId,
+					swept.token,
 					creator.toString(),
 					split.agent.toString(),
 					split.treasury.toString(),
@@ -1376,15 +1417,18 @@ export class Coins {
 		return { fees, gifts, failed };
 	}
 
-	/** trade and pool fee shares the treasury has not collected from one agent yet, in its pair */
+	/** trade and pool fee shares the treasury has not collected from an agent's current coin, in its pair */
 	private unsettledFees(agentId: string) {
 		const rows = this.o.db
 			.prepare(
-				`SELECT 'fee_ledger' AS tbl, id, treasury_amount FROM fee_ledger WHERE agent_id = ? AND paid_at IS NULL
+				`SELECT 'fee_ledger' AS tbl, f.id, f.treasury_amount FROM fee_ledger f
+				 JOIN trades t ON t.id = f.trade_id
+				 WHERE f.agent_id = @agent AND t.token = @token AND f.paid_at IS NULL
 				 UNION ALL
-				 SELECT 'pool_fees', id, treasury_amount FROM pool_fees WHERE agent_id = ? AND paid_at IS NULL`
+				 SELECT 'pool_fees', id, treasury_amount FROM pool_fees
+				 WHERE agent_id = @agent AND token = @token AND paid_at IS NULL`
 			)
-			.all(agentId, agentId) as {
+			.all({ agent: agentId, token: this.coinFor(agentId)?.token ?? null }) as {
 			tbl: 'fee_ledger' | 'pool_fees';
 			id: number;
 			treasury_amount: string;
@@ -1598,12 +1642,16 @@ export class Coins {
 	private shares(agentId: string | null = null) {
 		return this.o.db
 			.prepare(
-				`SELECT * FROM (
-				   SELECT 'fees' AS source, f.id, f.agent_id, f.agent_amount, f.paid_at, c.pair
-				   FROM fee_ledger f JOIN coins c ON c.agent_id = f.agent_id
+				`WITH every_coin AS (
+				   SELECT token, pair FROM coins WHERE token IS NOT NULL
+				   UNION ALL SELECT token, pair FROM retired_coins
+				 )
+				 SELECT * FROM (
+				   SELECT 'fees' AS source, f.id, f.agent_id, f.agent_amount, f.paid_at, k.pair
+				   FROM fee_ledger f JOIN trades t ON t.id = f.trade_id JOIN every_coin k ON k.token = t.token
 				   UNION ALL
-				   SELECT 'fees', p.id, p.agent_id, p.agent_amount, p.paid_at, c.pair
-				   FROM pool_fees p JOIN coins c ON c.agent_id = p.agent_id
+				   SELECT 'fees', p.id, p.agent_id, p.agent_amount, p.paid_at, k.pair
+				   FROM pool_fees p JOIN every_coin k ON k.token = p.token
 				   UNION ALL
 				   SELECT 'gifts', g.id, s.agent_id, g.agent_amount, g.payout_at, NULL
 				   FROM gifts g JOIN streams s ON s.id = g.stream_id

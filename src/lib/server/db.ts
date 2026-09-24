@@ -216,6 +216,24 @@ const MIGRATIONS: string[] = [
 	// the creator tax a coin launched with, charged on every trade on top of the fee
 	`
 	ALTER TABLE coins ADD COLUMN creator_tax_bps INTEGER NOT NULL DEFAULT 0;
+	`,
+	// an agent's coin can be retired and replaced: trades and pool fees name the coin they
+	// belong to, and retired coins are kept for the record
+	`
+	ALTER TABLE trades ADD COLUMN token TEXT;
+	UPDATE trades SET token = (SELECT token FROM coins WHERE coins.agent_id = trades.agent_id);
+	CREATE INDEX trades_by_token ON trades(token, id);
+	ALTER TABLE pool_fees ADD COLUMN token TEXT;
+	UPDATE pool_fees SET token = (SELECT token FROM coins WHERE coins.agent_id = pool_fees.agent_id);
+	CREATE TABLE retired_coins (
+		agent_id    TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		token       TEXT NOT NULL PRIMARY KEY,
+		curve       TEXT NOT NULL,
+		pair        TEXT NOT NULL,
+		launch_tx   TEXT,
+		created_at  INTEGER NOT NULL,
+		retired_at  INTEGER NOT NULL
+	);
 	`
 ];
 
