@@ -99,7 +99,7 @@ if (provider === 'dynamic') {
 }
 
 const dbFile = join(env.MUSESTREAM_DATA_DIR ?? 'data', 'musestream.db');
-const minTreasury = parseEther(env.PREFLIGHT_MIN_TREASURY_ETH ?? '0.02');
+const minTreasury = parseEther(env.PREFLIGHT_MIN_TREASURY_ETH ?? '0.001');
 if (!existsSync(dbFile)) {
 	warn(`no database at ${dbFile}; the treasury wallet is created on first start, then fund it`);
 } else {
