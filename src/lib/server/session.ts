@@ -13,12 +13,16 @@ export function dynamicEnvironmentId(): string | null {
 	return env.DYNAMIC_ENVIRONMENT_ID || null;
 }
 
-/** check a Dynamic access token and return the user and their EVM wallet address */
+/**
+ * Check a Dynamic access token and return the user and their EVM wallet address. The token
+ * names the user but carries only hashes of their wallets, so the address comes from
+ * Dynamic's API.
+ */
 export async function verifyDynamicToken(
 	token: string
 ): Promise<{ userId: string; address: Address }> {
 	const envId = dynamicEnvironmentId();
-	if (!envId)
+	if (!envId || !env.DYNAMIC_API_TOKEN)
 		throw new MusestreamError(501, 'no_signin', 'Wallet sign-in is not set up on this server.');
 	jwks ??= createRemoteJWKSet(
 		new URL(`https://app.dynamicauth.com/api/v0/sdk/${envId}/.well-known/jwks`)
@@ -29,9 +33,19 @@ export async function verifyDynamicToken(
 	} catch {
 		throw new MusestreamError(401, 'bad_token', 'The sign-in token is not valid. Sign in again.');
 	}
-	const creds = (payload.verified_credentials ?? []) as { address?: string; chain?: string }[];
-	const evm = creds.find((c) => c.chain === 'eip155' && c.address);
-	if (!payload.sub || !evm?.address || !/^0x[0-9a-fA-F]{40}$/.test(evm.address)) {
+	if (!payload.sub) throw new MusestreamError(401, 'bad_token', 'The sign-in token names no user.');
+	const res = await fetch(
+		`https://app.dynamicauth.com/api/v0/environments/${envId}/users/${encodeURIComponent(payload.sub)}`,
+		{ headers: { Authorization: `Bearer ${env.DYNAMIC_API_TOKEN}` } }
+	);
+	if (!res.ok) throw new MusestreamError(502, 'dynamic', 'Could not reach Dynamic. Try again.');
+	const { user } = (await res.json()) as {
+		user: { verifiedCredentials?: { format?: string; chain?: string; address?: string }[] };
+	};
+	const evm = user.verifiedCredentials?.find(
+		(c) => c.format === 'blockchain' && c.chain === 'eip155' && c.address
+	);
+	if (!evm?.address || !/^0x[0-9a-fA-F]{40}$/.test(evm.address)) {
 		throw new MusestreamError(400, 'no_wallet', 'The signed-in account has no EVM wallet yet.');
 	}
 	return { userId: payload.sub, address: evm.address as Address };

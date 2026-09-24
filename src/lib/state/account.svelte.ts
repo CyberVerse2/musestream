@@ -17,7 +17,7 @@ export async function loadAccount() {
 		const returning = /[?&](code|state|dynamicOauth)/i.test(window.location.search);
 		if (!config.signedInAs && !returning) return;
 		const dynamic = await import('../wallet/dynamic');
-		await dynamic.initDynamic(config.dynamicEnvironmentId, config.chainId);
+		await dynamic.initDynamic(config.dynamicEnvironmentId, config.chainId, config.rpcUrl);
 		// back from Google: finish the sign-in and link the wallet
 		const token = await dynamic.finishRedirect();
 		if (token) {

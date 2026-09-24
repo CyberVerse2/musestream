@@ -1,27 +1,29 @@
 // A viewer's own wallet through Dynamic: email or Google sign-in, an embedded wallet, and signing.
 // Loaded only when the server has a Dynamic environment; nothing here runs otherwise.
 //
-// Not yet run against a real Dynamic environment. Robinhood Chain (4663) may need to be
-// enabled in the Dynamic dashboard before `switchActiveNetwork` accepts it.
+// Robinhood Chain (4663) must be enabled in the Dynamic dashboard for `switchActiveNetwork`.
 import type { TxRequest } from '$shared/tx';
 
 type Sdk = {
 	client: typeof import('@dynamic-labs-sdk/client');
-	waas: typeof import('@dynamic-labs-sdk/client/waas');
 	viem: typeof import('@dynamic-labs-sdk/evm/viem');
 	instance: import('@dynamic-labs-sdk/client').DynamicClient;
 };
 
 let sdk: Promise<Sdk> | null = null;
 let chainId = 4663;
+let rpcUrl = '';
 
-/** start the SDK once per page */
-export function initDynamic(environmentId: string, chain: number): Promise<Sdk> {
+/**
+ * Start the SDK once per page. `rpc` is where the viewer's transactions go: the chain the
+ * server reads, which in development is a local fork, not the public network Dynamic knows.
+ */
+export function initDynamic(environmentId: string, chain: number, rpc: string): Promise<Sdk> {
 	chainId = chain;
+	rpcUrl = rpc;
 	sdk ??= (async () => {
-		const [client, waas, evm, viem] = await Promise.all([
+		const [client, evm, viem] = await Promise.all([
 			import('@dynamic-labs-sdk/client'),
-			import('@dynamic-labs-sdk/client/waas'),
 			import('@dynamic-labs-sdk/evm'),
 			import('@dynamic-labs-sdk/evm/viem')
 		]);
@@ -32,7 +34,7 @@ export function initDynamic(environmentId: string, chain: number): Promise<Sdk> 
 		});
 		evm.addEvmExtension();
 		await client.initializeClient();
-		return { client, waas, viem, instance };
+		return { client, viem, instance };
 	})();
 	return sdk;
 }
@@ -72,11 +74,17 @@ export async function finishRedirect(): Promise<string | null> {
 	return afterSignIn();
 }
 
-/** every sign-in ends here: make sure an embedded wallet exists, return the session token */
+/**
+ * every sign-in ends here: wait for the embedded wallet, return the session token.
+ * Dynamic creates the wallet itself during sign-up; creating it again here needs step-up auth.
+ */
 async function afterSignIn(): Promise<string> {
-	const { waas, instance } = await sdk!;
-	// creates only the wallets this user is missing; safe to call on every sign-in
-	await waas.createWaasWalletAccounts({ chains: waas.getChainsMissingWaasWalletAccounts() });
+	const { client, instance } = await sdk!;
+	for (let i = 0; i < 30 && !client.getWalletAccounts().some((a) => a.chain === 'EVM'); i++) {
+		await new Promise((r) => setTimeout(r, 500));
+	}
+	if (!client.getWalletAccounts().some((a) => a.chain === 'EVM'))
+		throw new Error('Signed in, but your wallet is not ready yet. Try again in a moment.');
 	if (!instance.token) throw new Error('Signed in, but no session token came back.');
 	return instance.token;
 }
@@ -87,12 +95,21 @@ export async function signOut() {
 	await client.logout();
 }
 
-/** sign and send a transaction from the viewer's wallet; resolves with its hash */
+/**
+ * Sign a transaction with the viewer's wallet and send it to the app's RPC; resolves with its
+ * hash. Dynamic signs; the broadcast does not go through Dynamic's network settings.
+ */
 export async function sendFromWallet(tx: TxRequest): Promise<`0x${string}`> {
 	const { client, viem } = await sdk!;
-	const account = client.getWalletAccounts()[0];
-	if (!account) throw new Error('Sign in first.');
-	await client.switchActiveNetwork({ walletAccount: account, networkId: String(chainId) });
-	const wallet = await viem.createWalletClientForWalletAccount({ walletAccount: account });
+	const walletAccount = client.getWalletAccounts()[0];
+	if (!walletAccount) throw new Error('Sign in first.');
+	await client.switchActiveNetwork({ walletAccount, networkId: String(chainId) });
+	const dynamicWallet = await viem.createWalletClientForWalletAccount({ walletAccount });
+	const { createWalletClient, http } = await import('viem');
+	const wallet = createWalletClient({
+		account: dynamicWallet.account,
+		chain: dynamicWallet.chain,
+		transport: http(rpcUrl)
+	});
 	return wallet.sendTransaction({ ...tx, account: wallet.account, chain: wallet.chain });
 }

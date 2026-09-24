@@ -30,7 +30,7 @@
 		run(async () => {
 			const cfg = account.config!;
 			const dynamic = await import('$lib/wallet/dynamic');
-			await dynamic.initDynamic(cfg.dynamicEnvironmentId!, cfg.chainId);
+			await dynamic.initDynamic(cfg.dynamicEnvironmentId!, cfg.chainId, cfg.rpcUrl);
 			verification = await dynamic.sendCode(email.trim());
 			step = 'code';
 		});
@@ -39,7 +39,7 @@
 		run(async () => {
 			const cfg = account.config!;
 			const dynamic = await import('$lib/wallet/dynamic');
-			await dynamic.initDynamic(cfg.dynamicEnvironmentId!, cfg.chainId);
+			await dynamic.initDynamic(cfg.dynamicEnvironmentId!, cfg.chainId, cfg.rpcUrl);
 			// leaves the page; the sign-in finishes when Google sends the viewer back
 			await dynamic.signInWithGoogle();
 		});
