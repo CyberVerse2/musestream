@@ -1,6 +1,6 @@
 // The wallet a viewer trades and gifts with.
 import { coins } from './app.ts';
-import { LurkkError } from './service.ts';
+import { MusestreamError } from './service.ts';
 import type { WalletRow } from './chain/wallets.ts';
 import { linkedAddress } from './session.ts';
 
@@ -9,16 +9,16 @@ import { linkedAddress } from './session.ts';
  * With real money, viewers must hold their own keys (Dynamic wallets), so this refuses.
  */
 export async function viewerWallet(viewer: string): Promise<WalletRow> {
-	if (!coins) throw new LurkkError(503, 'no_chain', 'Coins are not available on this server.');
+	if (!coins) throw new MusestreamError(503, 'no_chain', 'Coins are not available on this server.');
 	if (linkedAddress(viewer)) {
-		throw new LurkkError(
+		throw new MusestreamError(
 			409,
 			'own_wallet',
 			'You signed in with your own wallet; it signs your trades.'
 		);
 	}
 	if (!coins.testMoney) {
-		throw new LurkkError(
+		throw new MusestreamError(
 			501,
 			'connect_wallet',
 			'Connect a wallet to trade. Wallet sign-in is coming soon.'

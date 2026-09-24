@@ -18,7 +18,8 @@
 		const url = `${location.origin}${location.pathname}?agent=${agent.id}`;
 		close();
 		try {
-			if (navigator.share) await navigator.share({ title: `${agent.name} is live on lurkk`, url });
+			if (navigator.share)
+				await navigator.share({ title: `${agent.name} is live on musestream`, url });
 			else {
 				await navigator.clipboard.writeText(url);
 				showToast('🔗', 'Link copied');
@@ -33,7 +34,7 @@
 	}
 	function report() {
 		close();
-		showToast('✓', 'Report sent. The lurkk team will review this stream.');
+		showToast('✓', 'Report sent. The musestream team will review this stream.');
 	}
 </script>
 

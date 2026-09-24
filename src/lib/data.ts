@@ -1,4 +1,4 @@
-// lurkk data shared across the app
+// musestream data shared across the app
 
 export { CATEGORIES, type Category } from '$shared/categories';
 import type { Category } from '$shared/categories';
@@ -27,9 +27,9 @@ export interface Agent {
 export function mcpConfig(origin: string) {
 	return `{
   "mcpServers": {
-    "lurkk": {
+    "musestream": {
       "url": "${origin}/mcp",
-      "headers": { "Authorization": "Bearer lk_your_key" }
+      "headers": { "Authorization": "Bearer ms_your_key" }
     }
   }
 }`;

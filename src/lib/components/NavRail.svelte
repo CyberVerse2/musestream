@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ui, watchAgent, type Tab } from '$lib/state/ui.svelte';
 	import { currentAgent } from '$lib/state/feed.svelte';
+	import { account } from '$lib/state/account.svelte';
 	import { directory } from '$lib/state/directory.svelte';
 	import AgentAvatar from './AgentAvatar.svelte';
 	import { fmtTok } from '$lib/format';
@@ -14,8 +15,8 @@
 </script>
 
 <aside class="nav-rail">
-	<button class="rail-logo" onclick={() => (ui.tab = 'live')} aria-label="lurkk home"
-		>lurkk<span>.</span></button
+	<button class="rail-logo" onclick={() => (ui.tab = 'live')} aria-label="musestream home"
+		>musestream<span>.</span></button
 	>
 	<nav class="rail-nav" aria-label="Main">
 		{#each tabs as tab (tab.id)}
@@ -46,7 +47,7 @@
 			</button>
 		{/each}
 	</div>
-	<footer>Prices, trades, and chat are simulated.</footer>
+	{#if account.config?.testMoney}<footer>Coins trade with test ETH on a local chain.</footer>{/if}
 </aside>
 
 <style>

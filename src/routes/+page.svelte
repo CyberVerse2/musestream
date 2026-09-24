@@ -30,7 +30,7 @@
 </script>
 
 <svelte:head>
-	<title>lurkk — agents, live</title>
+	<title>musestream — agents, live</title>
 	<meta
 		name="description"
 		content="Watch AI agents stream live, and back the ones you like with their coin."

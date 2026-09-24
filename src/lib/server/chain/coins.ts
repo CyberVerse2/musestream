@@ -1,8 +1,8 @@
 // Agent coins on the Pons V2 launchpad: launch, trade, index, and share fees.
 //
-// The lurkk treasury launches every coin. That makes it the curve's deployer, so it may
+// The musestream treasury launches every coin. That makes it the curve's deployer, so it may
 // sweep fees, and it is the creator fee recipient, so fees land in its escrow balance.
-// lurkk then owes each agent 40% of the creator share and pays it out in `settleFees`.
+// musestream then owes each agent 40% of the creator share and pays it out in `settleFees`.
 import { randomBytes } from 'node:crypto';
 import {
 	BaseError,
@@ -24,7 +24,7 @@ import { sellQuote, withSlippage } from '../../../../shared/curve.ts';
 import type { DB } from '../db.ts';
 import type { Hub } from '../hub.ts';
 import type { AgentRow } from '../service.ts';
-import { LurkkError } from '../service.ts';
+import { MusestreamError } from '../service.ts';
 import {
 	curveAbi,
 	escrowAbi,
@@ -425,10 +425,14 @@ export class Coins {
 	private liveCoin(agentId: string) {
 		const coin = this.coinFor(agentId);
 		if (!coin || coin.status !== 'live' || !coin.curve || !coin.token) {
-			throw new LurkkError(409, 'no_coin', 'This agent has no coin yet.');
+			throw new MusestreamError(409, 'no_coin', 'This agent has no coin yet.');
 		}
 		if (coin.graduated) {
-			throw new LurkkError(409, 'graduated', 'This coin has graduated. It trades on Uniswap now.');
+			throw new MusestreamError(
+				409,
+				'graduated',
+				'This coin has graduated. It trades on Uniswap now.'
+			);
 		}
 		return coin as CoinRow & { curve: Address; token: Address };
 	}
@@ -463,8 +467,8 @@ export class Coins {
 			await this.sync();
 			return { hash, tokens: expected };
 		} catch (err) {
-			if (err instanceof LurkkError) throw err;
-			throw new LurkkError(
+			if (err instanceof MusestreamError) throw err;
+			throw new MusestreamError(
 				400,
 				'trade_failed',
 				`The buy did not go through: ${revertReason(err)}.`
@@ -517,8 +521,8 @@ export class Coins {
 			await this.sync();
 			return { hash, wei: expected };
 		} catch (err) {
-			if (err instanceof LurkkError) throw err;
-			throw new LurkkError(
+			if (err instanceof MusestreamError) throw err;
+			throw new MusestreamError(
 				400,
 				'trade_failed',
 				`The sale did not go through: ${revertReason(err)}.`
@@ -549,7 +553,11 @@ export class Coins {
 				minOut: withSlippage(expected, 300n)
 			};
 		} catch (err) {
-			throw new LurkkError(400, 'quote_failed', `No price for this buy: ${revertReason(err)}.`);
+			throw new MusestreamError(
+				400,
+				'quote_failed',
+				`No price for this buy: ${revertReason(err)}.`
+			);
 		}
 	}
 
@@ -572,7 +580,7 @@ export class Coins {
 		]);
 		const amount = fraction === 1 ? balance : (balance * BigInt(fraction * 100)) / 100n;
 		if (amount === 0n)
-			throw new LurkkError(409, 'nothing_to_sell', 'This wallet holds none of this coin.');
+			throw new MusestreamError(409, 'nothing_to_sell', 'This wallet holds none of this coin.');
 		const expected = sellQuote(amount, { quote, tokens }, feeBps);
 		return {
 			curve: coin.curve,
@@ -598,7 +606,7 @@ export class Coins {
 			t.to?.toLowerCase() === to.toLowerCase() &&
 			t.value >= minWei;
 		if (!ok)
-			throw new LurkkError(400, 'bad_payment', 'That transaction does not pay for this gift.');
+			throw new MusestreamError(400, 'bad_payment', 'That transaction does not pay for this gift.');
 	}
 
 	/** move ETH, e.g. a gift from a viewer to the treasury */

@@ -4,7 +4,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { Address } from 'viem';
 import { env } from '$env/dynamic/private';
 import { db } from './app.ts';
-import { LurkkError } from './service.ts';
+import { MusestreamError } from './service.ts';
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
@@ -19,7 +19,7 @@ export async function verifyDynamicToken(
 ): Promise<{ userId: string; address: Address }> {
 	const envId = dynamicEnvironmentId();
 	if (!envId)
-		throw new LurkkError(501, 'no_signin', 'Wallet sign-in is not set up on this server.');
+		throw new MusestreamError(501, 'no_signin', 'Wallet sign-in is not set up on this server.');
 	jwks ??= createRemoteJWKSet(
 		new URL(`https://app.dynamicauth.com/api/v0/sdk/${envId}/.well-known/jwks`)
 	);
@@ -27,12 +27,12 @@ export async function verifyDynamicToken(
 	try {
 		({ payload } = await jwtVerify(token, jwks, { issuer: `app.dynamicauth.com/${envId}` }));
 	} catch {
-		throw new LurkkError(401, 'bad_token', 'The sign-in token is not valid. Sign in again.');
+		throw new MusestreamError(401, 'bad_token', 'The sign-in token is not valid. Sign in again.');
 	}
 	const creds = (payload.verified_credentials ?? []) as { address?: string; chain?: string }[];
 	const evm = creds.find((c) => c.chain === 'eip155' && c.address);
 	if (!payload.sub || !evm?.address || !/^0x[0-9a-fA-F]{40}$/.test(evm.address)) {
-		throw new LurkkError(400, 'no_wallet', 'The signed-in account has no EVM wallet yet.');
+		throw new MusestreamError(400, 'no_wallet', 'The signed-in account has no EVM wallet yet.');
 	}
 	return { userId: payload.sub, address: evm.address as Address };
 }

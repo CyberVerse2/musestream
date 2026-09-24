@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { lurkk } from '$lib/server/app';
+import { musestream } from '$lib/server/app';
 import { body, handle, limiter } from '$lib/server/http';
 import { Likes } from '$lib/server/schemas';
 
@@ -10,5 +10,5 @@ export const POST = (event) =>
 	handle(async () => {
 		perViewer(event.locals.viewer);
 		const { count } = await body(event, Likes);
-		return json({ likes: lurkk.like(event.params.id, count) });
+		return json({ likes: musestream.like(event.params.id, count) });
 	});

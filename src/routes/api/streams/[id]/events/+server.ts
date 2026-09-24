@@ -1,4 +1,4 @@
-import { lurkk } from '$lib/server/app';
+import { musestream } from '$lib/server/app';
 import { handle } from '$lib/server/http';
 import { toPublicAgent, toPublicChat } from '$lib/server/views';
 import { publicCoin } from '$lib/server/market';
@@ -9,7 +9,7 @@ import { publicCoin } from '$lib/server/market';
  */
 export const GET = ({ params, request }) =>
 	handle(() => {
-		const snap = lurkk.snapshot(params.id);
+		const snap = musestream.snapshot(params.id);
 		const encoder = new TextEncoder();
 		let cleanup = () => {};
 
@@ -37,8 +37,8 @@ export const GET = ({ params, request }) =>
 					controller.close();
 					return;
 				}
-				lurkk.viewerJoined(params.id);
-				const off = lurkk.hub.on(params.id, (e) => {
+				musestream.viewerJoined(params.id);
+				const off = musestream.hub.on(params.id, (e) => {
 					if (e.type === 'chat') send('chat', toPublicChat(e.message));
 					else send(e.type, e);
 					if (e.type === 'ended') cleanup();
@@ -57,7 +57,7 @@ export const GET = ({ params, request }) =>
 					done = true;
 					clearInterval(ping);
 					off();
-					lurkk.viewerLeft(params.id);
+					musestream.viewerLeft(params.id);
 					try {
 						controller.close();
 					} catch {

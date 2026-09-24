@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { lurkk } from '$lib/server/app';
+import { musestream } from '$lib/server/app';
 import { toPublicStream } from '$lib/server/views';
 import { publicCoin } from '$lib/server/market';
 import { ethPrice } from '$lib/server/app';
@@ -8,7 +8,7 @@ import { ethPrice } from '$lib/server/app';
 export const GET = async () =>
 	json({
 		ethUsd: await ethPrice.usd(),
-		streams: lurkk
+		streams: musestream
 			.liveStreams()
 			.map((s) => ({ ...toPublicStream(s), coin: publicCoin(s.agent.id) }))
 	});

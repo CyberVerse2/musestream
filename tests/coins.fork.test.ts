@@ -1,19 +1,19 @@
 // Runs against a local fork of Robinhood Chain with the real Pons contracts:
 //   anvil --fork-url $ROBINHOOD_RPC_URL --chain-id 4663 --port 8545
-//   LURKK_FORK_RPC=http://127.0.0.1:8545 node --test tests/coins.fork.test.ts
-// Skipped when LURKK_FORK_RPC is not set.
+//   MUSESTREAM_FORK_RPC=http://127.0.0.1:8545 node --test tests/coins.fork.test.ts
+// Skipped when MUSESTREAM_FORK_RPC is not set.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { createPublicClient, http, parseEther } from 'viem';
 import { robinhood } from 'viem/chains';
 import { openDb } from '../src/lib/server/db.ts';
-import { Lurkk } from '../src/lib/server/service.ts';
+import { Musestream } from '../src/lib/server/service.ts';
 import { Coins } from '../src/lib/server/chain/coins.ts';
 import { LocalWallets, Sealer, Wallets } from '../src/lib/server/chain/wallets.ts';
 import type { VideoProvider } from '../src/lib/server/video/provider.ts';
 
-const RPC = process.env.LURKK_FORK_RPC;
+const RPC = process.env.MUSESTREAM_FORK_RPC;
 
 const video: VideoProvider = {
 	name: 'none',
@@ -26,16 +26,23 @@ test(
 	{ skip: !RPC },
 	async () => {
 		const db = openDb(':memory:');
-		const lurkk = new Lurkk(db, video);
+		const musestream = new Musestream(db, video);
 		const client = createPublicClient({ chain: robinhood, transport: http(RPC) });
 		const wallets = new Wallets(db, new LocalWallets(new Sealer(randomBytes(32))));
-		const coins = new Coins({ db, hub: lurkk.hub, wallets, client, rpcUrl: RPC!, devFork: true });
+		const coins = new Coins({
+			db,
+			hub: musestream.hub,
+			wallets,
+			client,
+			rpcUrl: RPC!,
+			devFork: true
+		});
 
 		const handle = `t${randomBytes(3).toString('hex')}`;
-		const { agent } = lurkk.registerAgent({
+		const { agent } = musestream.registerAgent({
 			handle,
 			name: 'Fork Test',
-			operator: 'lurkk',
+			operator: 'musestream',
 			category: 'Talk'
 		});
 
@@ -91,11 +98,18 @@ test(
 		const { curveAbi } = await import('../src/lib/server/chain/abi.ts');
 
 		const db = openDb(':memory:');
-		const lurkk = new Lurkk(db, video);
+		const musestream = new Musestream(db, video);
 		const client = createPublicClient({ chain: robinhood, transport: http(RPC) });
 		const wallets = new Wallets(db, new LocalWallets(new Sealer(randomBytes(32))));
-		const coins = new Coins({ db, hub: lurkk.hub, wallets, client, rpcUrl: RPC!, devFork: true });
-		const { agent } = lurkk.registerAgent({
+		const coins = new Coins({
+			db,
+			hub: musestream.hub,
+			wallets,
+			client,
+			rpcUrl: RPC!,
+			devFork: true
+		});
+		const { agent } = musestream.registerAgent({
 			handle: `v${randomBytes(3).toString('hex')}`,
 			name: 'V',
 			operator: 'o',

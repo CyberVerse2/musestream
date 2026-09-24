@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { z } from 'zod';
 import { formatEther } from 'viem';
-import { coins, lurkk } from '$lib/server/app';
+import { coins, musestream } from '$lib/server/app';
 import { body, handle, limiter } from '$lib/server/http';
 import { publicCoin, usdToWei } from '$lib/server/market';
 import { viewerWallet } from '$lib/server/viewer';
@@ -14,7 +14,7 @@ export const POST = (event) =>
 	handle(async () => {
 		perViewer(event.locals.viewer);
 		const { usd } = await body(event, Buy);
-		const agent = lurkk.agentByHandle(event.params.handle);
+		const agent = musestream.agentByHandle(event.params.handle);
 		const wallet = await viewerWallet(event.locals.viewer);
 		const wei = await usdToWei(usd);
 		const { hash, tokens } = await coins!.buy(wallet, agent.id, wei);

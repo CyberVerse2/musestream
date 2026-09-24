@@ -1,4 +1,4 @@
-// The browser's view of the lurkk HTTP API.
+// The browser's view of the musestream HTTP API.
 import type { Category } from '$shared/categories';
 import type { Candle, Interval } from '$shared/candles';
 
@@ -187,5 +187,5 @@ export const api = {
 
 /** the anonymous name the server gave this browser */
 export function viewerName(): string | null {
-	return document.cookie.match(/(?:^|;\s*)lurkk_viewer=([^;]+)/)?.[1] ?? null;
+	return document.cookie.match(/(?:^|;\s*)musestream_viewer=([^;]+)/)?.[1] ?? null;
 }

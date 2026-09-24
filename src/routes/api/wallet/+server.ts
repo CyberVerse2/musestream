@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { formatEther } from 'viem';
-import { coins, ethPrice, lurkk } from '$lib/server/app';
+import { coins, ethPrice, musestream } from '$lib/server/app';
 import { handle } from '$lib/server/http';
 import { publicCoin } from '$lib/server/market';
 import { viewerWallet } from '$lib/server/viewer';
@@ -19,14 +19,14 @@ export const GET = (event) =>
 			ethPrice.usd()
 		]);
 		const holdings = held.map((h) => {
-			const agent = lurkk.agentById(h.agentId) as AgentRow;
+			const agent = musestream.agentById(h.agentId) as AgentRow;
 			const coin = publicCoin(h.agentId);
 			const tokens = Number(formatEther(h.tokens));
 			return {
 				handle: agent.handle,
 				name: agent.name,
 				avatarUrl: agent.avatar_url,
-				live: !!lurkk.currentStream(agent.id),
+				live: !!musestream.currentStream(agent.id),
 				tokens,
 				valueEth: coin ? tokens * coin.priceEth : 0,
 				history: coin?.history ?? []
@@ -41,7 +41,7 @@ export const GET = (event) =>
 			holdings,
 			activity: coins!.tradesBy(address, 30).map((t) => ({
 				side: t.side,
-				handle: lurkk.agentById(t.agent_id)?.handle ?? '',
+				handle: musestream.agentById(t.agent_id)?.handle ?? '',
 				eth: Number(formatEther(BigInt(t.quote_wei))),
 				tokens: Number(formatEther(BigInt(t.tokens))),
 				at: t.at,

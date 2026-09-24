@@ -1,4 +1,4 @@
-// The lurkk domain: agents, their streams, chat, likes, gifts, and video.
+// The musestream domain: agents, their streams, chat, likes, gifts, and video.
 // Routes stay thin and call these methods; tests drive this class directly.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DB } from './db.ts';
@@ -46,20 +46,20 @@ export interface ChatRow {
 }
 
 /** A failure the caller caused; routes turn it into a 4xx response. */
-export class LurkkError extends Error {
+export class MusestreamError extends Error {
 	readonly status: number;
 	readonly code: string;
 	constructor(status: number, code: string, message: string) {
 		super(message);
-		this.name = 'LurkkError';
+		this.name = 'MusestreamError';
 		this.status = status;
 		this.code = code;
 	}
 }
 
 /** matches by name, so it holds even when the module was loaded twice (dev reloads) */
-export function isLurkkError(err: unknown): err is LurkkError {
-	return err instanceof Error && err.name === 'LurkkError' && 'status' in err;
+export function isMusestreamError(err: unknown): err is MusestreamError {
+	return err instanceof Error && err.name === 'MusestreamError' && 'status' in err;
 }
 
 export interface LiveStream {
@@ -70,7 +70,7 @@ export interface LiveStream {
 	video: VideoSource | null;
 }
 
-/** at most `max` calls per `windowMs` for each key; throws a 429 LurkkError past that */
+/** at most `max` calls per `windowMs` for each key; throws a 429 MusestreamError past that */
 export class RateLimit {
 	private hits = new Map<string, number[]>();
 	private max: number;
@@ -83,7 +83,7 @@ export class RateLimit {
 		const recent = (this.hits.get(key) ?? []).filter((t) => now - t < this.windowMs);
 		if (recent.length >= this.max) {
 			const wait = Math.ceil((recent[0]! + this.windowMs - now) / 1000);
-			throw new LurkkError(429, 'slow_down', `Too many ${what}. Try again in ${wait}s.`);
+			throw new MusestreamError(429, 'slow_down', `Too many ${what}. Try again in ${wait}s.`);
 		}
 		recent.push(now);
 		this.hits.set(key, recent);
@@ -94,7 +94,7 @@ function hashKey(key: string) {
 	return createHash('sha256').update(key).digest('hex');
 }
 
-export class Lurkk {
+export class Musestream {
 	readonly hub = new Hub();
 	/** open event connections per stream; the watcher count viewers see */
 	private viewers = new Map<string, number>();
@@ -144,7 +144,7 @@ export class Lurkk {
 	}): { agent: AgentRow; apiKey: string } {
 		const handle = input.handle.toLowerCase();
 		if (this.db.prepare('SELECT 1 FROM agents WHERE handle = ?').get(handle)) {
-			throw new LurkkError(409, 'handle_taken', `The handle @${handle} is taken.`);
+			throw new MusestreamError(409, 'handle_taken', `The handle @${handle} is taken.`);
 		}
 		const agent: AgentRow = {
 			id: randomUUID(),
@@ -156,7 +156,7 @@ export class Lurkk {
 			avatar_url: input.avatarUrl ?? null,
 			created_at: this.now()
 		};
-		const apiKey = `lk_${randomBytes(24).toString('base64url')}`;
+		const apiKey = `ms_${randomBytes(24).toString('base64url')}`;
 		this.db.transaction(() => {
 			this.db
 				.prepare(
@@ -173,14 +173,15 @@ export class Lurkk {
 
 	/** the agent that owns this API key, or an error */
 	authenticate(apiKey: string | null): AgentRow {
-		if (!apiKey) throw new LurkkError(401, 'missing_key', 'Send your API key as a Bearer token.');
+		if (!apiKey)
+			throw new MusestreamError(401, 'missing_key', 'Send your API key as a Bearer token.');
 		const agent = this.db
 			.prepare(
 				`SELECT a.* FROM api_keys k JOIN agents a ON a.id = k.agent_id
 				 WHERE k.key_hash = ? AND k.revoked_at IS NULL`
 			)
 			.get(hashKey(apiKey)) as AgentRow | undefined;
-		if (!agent) throw new LurkkError(401, 'bad_key', 'This API key is not valid.');
+		if (!agent) throw new MusestreamError(401, 'bad_key', 'This API key is not valid.');
 		return agent;
 	}
 
@@ -204,7 +205,7 @@ export class Lurkk {
 		const agent = this.db
 			.prepare('SELECT * FROM agents WHERE handle = ?')
 			.get(handle.toLowerCase()) as AgentRow | undefined;
-		if (!agent) throw new LurkkError(404, 'no_agent', `No agent is called @${handle}.`);
+		if (!agent) throw new MusestreamError(404, 'no_agent', `No agent is called @${handle}.`);
 		return agent;
 	}
 
@@ -220,20 +221,21 @@ export class Lurkk {
 
 	private requireStream(agentId: string): StreamRow {
 		const stream = this.currentStream(agentId);
-		if (!stream) throw new LurkkError(409, 'not_live', 'You are not live. Start a stream first.');
+		if (!stream)
+			throw new MusestreamError(409, 'not_live', 'You are not live. Start a stream first.');
 		return stream;
 	}
 
 	streamById(id: string): StreamRow {
 		const stream = this.db.prepare('SELECT * FROM streams WHERE id = ?').get(id) as
 			StreamRow | undefined;
-		if (!stream) throw new LurkkError(404, 'no_stream', 'This stream does not exist.');
+		if (!stream) throw new MusestreamError(404, 'no_stream', 'This stream does not exist.');
 		return stream;
 	}
 
 	async goLive(agent: AgentRow, input: { title: string; scene: string }): Promise<StreamRow> {
 		if (this.currentStream(agent.id)) {
-			throw new LurkkError(409, 'already_live', 'You are already live. End the stream first.');
+			throw new MusestreamError(409, 'already_live', 'You are already live. End the stream first.');
 		}
 		const stream: StreamRow = {
 			id: randomUUID(),
@@ -434,7 +436,7 @@ export class Lurkk {
 
 	viewerChat(streamId: string, viewer: string, body: string): ChatRow {
 		const stream = this.streamById(streamId);
-		if (stream.ended_at) throw new LurkkError(409, 'ended', 'This stream has ended.');
+		if (stream.ended_at) throw new MusestreamError(409, 'ended', 'This stream has ended.');
 		return this.addChat(streamId, viewer, 'viewer', body);
 	}
 
@@ -461,7 +463,7 @@ export class Lurkk {
 	/** The stream must be live to receive a gift; check before taking payment. */
 	requireLiveStream(streamId: string): StreamRow {
 		const stream = this.streamById(streamId);
-		if (stream.ended_at) throw new LurkkError(409, 'ended', 'This stream has ended.');
+		if (stream.ended_at) throw new MusestreamError(409, 'ended', 'This stream has ended.');
 		return stream;
 	}
 

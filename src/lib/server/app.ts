@@ -1,4 +1,4 @@
-// The one lurkk instance for this server process.
+// The one musestream instance for this server process.
 import { env } from '$env/dynamic/private';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -11,12 +11,12 @@ import { EthPrice } from './chain/prices.ts';
 import { DynamicWallets } from './chain/dynamic-wallets.ts';
 import { LocalWallets, Sealer, Wallets, type WalletProvider } from './chain/wallets.ts';
 import { openDb } from './db.ts';
-import { Lurkk } from './service.ts';
+import { Musestream } from './service.ts';
 import { MockVideo } from './video/mock.ts';
 import type { VideoProvider } from './video/provider.ts';
 import { ReactorVideo } from './video/reactor.ts';
 
-export const DATA_DIR = resolve(env.LURKK_DATA_DIR ?? 'data');
+export const DATA_DIR = resolve(env.MUSESTREAM_DATA_DIR ?? 'data');
 export const MEDIA_DIR = join(DATA_DIR, 'media');
 
 function videoProvider(): VideoProvider {
@@ -45,8 +45,8 @@ function videoProvider(): VideoProvider {
 	throw new Error(`VIDEO_PROVIDER must be "mock" or "reactor", not "${name}".`);
 }
 
-export const db = openDb(join(DATA_DIR, 'lurkk.db'));
-export const lurkk = new Lurkk(db, videoProvider());
+export const db = openDb(join(DATA_DIR, 'musestream.db'));
+export const musestream = new Musestream(db, videoProvider());
 export const ethPrice = new EthPrice(env.CODEX_API_KEY);
 
 /** 32 bytes that encrypt wallet keys at rest; generated once for development */
@@ -94,24 +94,24 @@ function makeCoins(): Coins | null {
 	console.log(
 		`[chain] coins on ${mode === 'fork' ? 'a local fork (test ETH)' : 'Robinhood Chain (real money)'}`
 	);
-	return new Coins({ db, hub: lurkk.hub, wallets, client, rpcUrl, devFork: mode === 'fork' });
+	return new Coins({ db, hub: musestream.hub, wallets, client, rpcUrl, devFork: mode === 'fork' });
 }
 export const coins = makeCoins();
 export const charts = coins ? new Charts(coins, env.CODEX_API_KEY) : null;
 export const wallets = coins ? coins.walletsStore : null;
 
 // background work: index trades, settle fees. Replaced on dev reloads, never doubled.
-const runtime = globalThis as unknown as { __lurkkStop?: () => void };
-runtime.__lurkkStop?.();
+const runtime = globalThis as unknown as { __musestreamStop?: () => void };
+runtime.__musestreamStop?.();
 if (coins) {
 	// load the ETH rate early so the first prices can show dollars
 	void ethPrice.usd();
 	// on a test chain, give coins to agents that registered before coins existed (once per process)
-	const once = globalThis as unknown as { __lurkkBackfilled?: boolean };
-	if (coins.testMoney && !once.__lurkkBackfilled) {
-		once.__lurkkBackfilled = true;
+	const once = globalThis as unknown as { __musestreamBackfilled?: boolean };
+	if (coins.testMoney && !once.__musestreamBackfilled) {
+		once.__musestreamBackfilled = true;
 		void (async () => {
-			for (const agent of lurkk.agentsWithoutCoins()) {
+			for (const agent of musestream.agentsWithoutCoins()) {
 				const coin = await coins.launch(agent);
 				console.log(`[chain] launched $${agent.handle.toUpperCase()}: ${coin.status}`);
 			}
@@ -122,10 +122,10 @@ if (coins) {
 	const settle = setInterval(() => {
 		coins.settleFees().catch((err) => console.error('fee settlement:', err));
 	}, settleMs);
-	runtime.__lurkkStop = () => {
+	runtime.__musestreamStop = () => {
 		stopIndexer();
 		clearInterval(settle);
 	};
 } else {
-	runtime.__lurkkStop = undefined;
+	runtime.__musestreamStop = undefined;
 }

@@ -2,13 +2,13 @@
 // Everything goes through the public HTTP API, the same way a real agent would call it.
 //
 //   npm run demo                      # against http://localhost:5173
-//   LURKK_URL=http://localhost:5174 npm run demo
+//   MUSESTREAM_URL=http://localhost:5174 npm run demo
 //
 // Uses the mock video provider on the server; it never calls a paid video model.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { CHAT_BY_CAT, CHAT_GENERIC, DEMO_AGENTS, REPLIES } from './demo-data.ts';
 
-const BASE = process.env.LURKK_URL ?? 'http://localhost:5173';
+const BASE = process.env.MUSESTREAM_URL ?? 'http://localhost:5173';
 const KEYS_FILE = 'data/demo-keys.json';
 
 const pick = <T>(list: T[]) => list[Math.floor(Math.random() * list.length)]!;
@@ -17,7 +17,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function call(path: string, init: RequestInit & { key?: string; viewer?: string } = {}) {
 	const headers: Record<string, string> = { 'content-type': 'application/json' };
 	if (init.key) headers.authorization = `Bearer ${init.key}`;
-	if (init.viewer) headers.cookie = `lurkk_viewer=${init.viewer}`;
+	if (init.viewer) headers.cookie = `musestream_viewer=${init.viewer}`;
 	const res = await fetch(BASE + path, { ...init, headers });
 	const data = await res.json().catch(() => null);
 	return { status: res.status, data };

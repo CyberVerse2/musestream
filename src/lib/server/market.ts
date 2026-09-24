@@ -1,6 +1,6 @@
 // Coin data as the app sees it, in ETH and, when the rate is known, US dollars.
 import { formatEther, type Address } from 'viem';
-import { coins, ethPrice, lurkk } from './app.ts';
+import { coins, ethPrice, musestream } from './app.ts';
 import type { TradeRow } from './chain/coins.ts';
 
 export function publicCoin(agentId: string) {
@@ -44,11 +44,11 @@ export async function usdToWei(usd: number): Promise<bigint> {
 
 /** tell viewers of a live stream that its coin moved */
 export function watchCoinEvents() {
-	return lurkk.hub.onGlobal((e) => {
+	return musestream.hub.onGlobal((e) => {
 		if (e.type !== 'coin') return;
-		const stream = lurkk.currentStream(e.agentId);
+		const stream = musestream.currentStream(e.agentId);
 		const coin = publicCoin(e.agentId);
-		if (stream && coin) lurkk.hub.emit(stream.id, { type: 'coin', coin });
+		if (stream && coin) musestream.hub.emit(stream.id, { type: 'coin', coin });
 	});
 }
 

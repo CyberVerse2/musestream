@@ -1,4 +1,4 @@
-// Dynamic server wallets (MPC). Dynamic holds one key share; lurkk stores the other,
+// Dynamic server wallets (MPC). Dynamic holds one key share; musestream stores the other,
 // with the wallet metadata, sealed in the wallets table. Neither side can sign alone.
 //
 // Not yet run against a real Dynamic environment. Before relying on it, check:

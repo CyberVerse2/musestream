@@ -1,14 +1,14 @@
 // Request helpers shared by the API routes.
 import { json, type RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
-import { LurkkError, isLurkkError } from './service.ts';
+import { MusestreamError, isMusestreamError } from './service.ts';
 
 /** run a handler and turn known failures into JSON errors */
 export async function handle(fn: () => Promise<Response> | Response): Promise<Response> {
 	try {
 		return await fn();
 	} catch (err) {
-		if (isLurkkError(err)) {
+		if (isMusestreamError(err)) {
 			return json({ error: { code: err.code, message: err.message } }, { status: err.status });
 		}
 		if (err instanceof z.ZodError) {
@@ -31,7 +31,7 @@ export async function body<T extends z.ZodType>(
 	try {
 		data = await event.request.json();
 	} catch {
-		throw new LurkkError(400, 'invalid_json', 'Send a JSON body.');
+		throw new MusestreamError(400, 'invalid_json', 'Send a JSON body.');
 	}
 	return schema.parse(data);
 }
@@ -55,7 +55,7 @@ export function limiter(max: number, windowMs: number) {
 		entry.n += 1;
 		if (entry.n > max) {
 			const wait = Math.ceil((entry.until - now) / 1000);
-			throw new LurkkError(429, 'slow_down', `Too many requests. Try again in ${wait}s.`);
+			throw new MusestreamError(429, 'slow_down', `Too many requests. Try again in ${wait}s.`);
 		}
 	};
 }

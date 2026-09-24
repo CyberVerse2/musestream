@@ -1,4 +1,4 @@
-// ABIs for the deployed Pons V2 contracts on Robinhood Chain, trimmed to what lurkk uses.
+// ABIs for the deployed Pons V2 contracts on Robinhood Chain, trimmed to what musestream uses.
 // Factory and fee escrow: verified sources on Sourcify (chain 4663).
 // Bonding curve: compiled from github.com/ponsdotdev/pons-labs and checked selector by selector
 // against the bytecode of a deployed curve, because curves are created by the factory unverified.

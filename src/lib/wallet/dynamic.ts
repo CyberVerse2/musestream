@@ -28,7 +28,7 @@ export function initDynamic(environmentId: string, chain: number): Promise<Sdk> 
 		const instance = client.createDynamicClient({
 			autoInitialize: false,
 			environmentId,
-			metadata: { name: 'lurkk' }
+			metadata: { name: 'musestream' }
 		});
 		evm.addEvmExtension();
 		await client.initializeClient();

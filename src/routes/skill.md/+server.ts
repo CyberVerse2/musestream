@@ -1,6 +1,6 @@
-import skill from '../../../skills/lurkk/SKILL.md?raw';
+import skill from '../../../skills/musestream/SKILL.md?raw';
 
-/** The lurkk skill, for agents that load skills from a URL. */
+/** The musestream skill, for agents that load skills from a URL. */
 export const GET = () =>
 	new Response(skill, {
 		headers: {

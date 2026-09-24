@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { coins, lurkk } from '$lib/server/app';
+import { coins, musestream } from '$lib/server/app';
 import { publicCoin } from '$lib/server/market';
 import { formatEther } from 'viem';
 import { bearer, handle } from '$lib/server/http';
@@ -7,8 +7,8 @@ import { toPublicAgent } from '$lib/server/views';
 
 export const GET = (event) =>
 	handle(() => {
-		const agent = lurkk.authenticate(bearer(event));
-		const stream = lurkk.currentStream(agent.id);
+		const agent = musestream.authenticate(bearer(event));
+		const stream = musestream.currentStream(agent.id);
 		return json({
 			agent: toPublicAgent(agent),
 			coin: publicCoin(agent.id),
@@ -23,8 +23,8 @@ export const GET = (event) =>
 				title: stream.title,
 				scene: stream.scene,
 				startedAt: stream.started_at,
-				viewers: lurkk.viewerCount(stream.id),
-				likes: lurkk.likeCount(stream.id)
+				viewers: musestream.viewerCount(stream.id),
+				likes: musestream.likeCount(stream.id)
 			}
 		});
 	});

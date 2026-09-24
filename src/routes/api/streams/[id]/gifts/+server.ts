@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
-import { coins, lurkk } from '$lib/server/app';
-import { GIFTS, LurkkError } from '$lib/server/service';
+import { coins, musestream } from '$lib/server/app';
+import { GIFTS, MusestreamError } from '$lib/server/service';
 import { usdToWei } from '$lib/server/market';
 import { viewerWallet } from '$lib/server/viewer';
 import { linkedAddress } from '$lib/server/session';
@@ -27,7 +27,7 @@ export const POST = (event) =>
 					.optional()
 			})
 		);
-		lurkk.requireLiveStream(event.params.id);
+		musestream.requireLiveStream(event.params.id);
 		let tx: string | null = null;
 		if (coins) {
 			const treasury = await coins.treasury();
@@ -36,7 +36,7 @@ export const POST = (event) =>
 			if (own) {
 				// the viewer's wallet already paid; accept small moves in the ETH rate
 				if (!paidTx)
-					throw new LurkkError(400, 'invalid', 'Send the payment transaction with the gift.');
+					throw new MusestreamError(400, 'invalid', 'Send the payment transaction with the gift.');
 				await coins.verifyPayment(
 					paidTx as `0x${string}`,
 					own,
@@ -48,6 +48,6 @@ export const POST = (event) =>
 				tx = await coins.send(await viewerWallet(event.locals.viewer), treasury.address, wei);
 			}
 		}
-		const msg = lurkk.gift(event.params.id, event.locals.viewer, gift, tx);
+		const msg = musestream.gift(event.params.id, event.locals.viewer, gift, tx);
 		return json({ message: toPublicChat(msg), tx }, { status: 201 });
 	});

@@ -1,9 +1,9 @@
 // MCP over HTTP (stateless, JSON responses). Agents add this URL with their API key.
 import { json } from '@sveltejs/kit';
 import { z } from 'zod';
-import { lurkk } from '$lib/server/app';
+import { musestream } from '$lib/server/app';
 import { bearer } from '$lib/server/http';
-import { isLurkkError } from '$lib/server/service';
+import { isMusestreamError } from '$lib/server/service';
 import { TOOLS } from '$lib/server/agent/tools';
 
 const SUPPORTED = ['2025-11-25', '2025-06-18', '2025-03-26'];
@@ -29,9 +29,9 @@ async function answer(req: RpcRequest, key: string | null) {
 			return ok(req.id, {
 				protocolVersion: SUPPORTED.includes(asked) ? asked : SUPPORTED[0],
 				capabilities: { tools: {} },
-				serverInfo: { name: 'lurkk', version: '0.1.0' },
+				serverInfo: { name: 'musestream', version: '0.1.0' },
 				instructions:
-					'You are streaming on lurkk. Go live, keep the picture moving with set_scene, read chat often, and answer viewers.'
+					'You are streaming on musestream. Go live, keep the picture moving with set_scene, read chat often, and answer viewers.'
 			});
 		}
 		case 'ping':
@@ -48,17 +48,17 @@ async function answer(req: RpcRequest, key: string | null) {
 			const tool = TOOLS.find((t) => t.name === req.params?.name);
 			if (!tool) return fail(req.id, -32602, `Unknown tool: ${String(req.params?.name)}`);
 			try {
-				const agent = lurkk.authenticate(key);
+				const agent = musestream.authenticate(key);
 				const args = tool.input.parse(req.params?.arguments ?? {});
-				const result = await tool.run(lurkk, agent, args);
+				const result = await tool.run(musestream, agent, args);
 				return ok(req.id, { content: [{ type: 'text', text: JSON.stringify(result) }] });
 			} catch (err) {
-				const message = isLurkkError(err)
+				const message = isMusestreamError(err)
 					? err.message
 					: err instanceof z.ZodError
 						? `Invalid arguments: ${err.issues[0]?.path.join('.')} ${err.issues[0]?.message}`
 						: 'The tool failed.';
-				if (!(isLurkkError(err) || err instanceof z.ZodError)) console.error(err);
+				if (!(isMusestreamError(err) || err instanceof z.ZodError)) console.error(err);
 				return ok(req.id, { content: [{ type: 'text', text: message }], isError: true });
 			}
 		}

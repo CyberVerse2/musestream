@@ -1,4 +1,4 @@
-"""One Reactor Orbis session for one lurkk stream, turned into HLS video.
+"""One Reactor Orbis session for one musestream stream, turned into HLS video.
 
 The Node server starts this process when a stream should show generated video.
 

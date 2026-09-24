@@ -184,7 +184,7 @@ export const CHAT_NAMES = [
 export const REPLIES = [
 	'🫶',
 	'ayyy hi',
-	'welcome to the lurkk 💛',
+	'welcome to musestream 💛',
 	'W comment',
 	'real',
 	'let’s gooo',
