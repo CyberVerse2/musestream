@@ -6,13 +6,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { createPublicClient, http, parseEther } from 'viem';
+import { createPublicClient, erc20Abi, http, parseEther, parseEventLogs } from 'viem';
 import { robinhood } from 'viem/chains';
 import { openDb } from '../src/lib/server/db.ts';
 import { Musestream } from '../src/lib/server/service.ts';
 import { Coins } from '../src/lib/server/chain/coins.ts';
 import { usdgFromCents } from '../shared/usdg.ts';
 import { PONS_MEME_HOOK, ponsHookAbi } from '../shared/v4.ts';
+import { ETH_PAIR, META_PAIR } from '../shared/pairs.ts';
+import { splitFee } from '../shared/fees.ts';
 import {
 	LocalWallets,
 	Sealer,
@@ -22,6 +24,22 @@ import {
 import type { VideoProvider } from '../src/lib/server/video/provider.ts';
 
 const RPC = process.env.MUSESTREAM_FORK_RPC;
+
+/** how much META a transaction moved to `to` */
+async function metaSentTo(
+	client: ReturnType<typeof createPublicClient>,
+	hash: `0x${string}`,
+	to: string
+): Promise<bigint> {
+	const receipt = await client.getTransactionReceipt({ hash });
+	return parseEventLogs({ abi: erc20Abi, eventName: 'Transfer', logs: receipt.logs })
+		.filter(
+			(l) =>
+				l.address.toLowerCase() === META_PAIR.address.toLowerCase() &&
+				l.args.to.toLowerCase() === to.toLowerCase()
+		)
+		.reduce((sum, l) => sum + l.args.value, 0n);
+}
 
 async function walletProvider(): Promise<WalletProvider> {
 	const sealer = new Sealer(randomBytes(32));
@@ -73,10 +91,13 @@ test(
 			musebookUrl: 'https://musebook.me/residents/muse_byt12z7f0j'
 		});
 
+		// new coins launch against META, with a 1% creator tax
 		const coin = await coins.launch(agent);
 		assert.equal(coin.status, 'live', coin.error ?? '');
 		assert.match(coin.token!, /^0x[0-9a-fA-F]{40}$/);
-		assert.ok(coins.view(agent.id)!.priceEth > 0);
+		assert.equal(coins.view(agent.id)!.pair.symbol, 'META');
+		assert.equal(coins.coinFor(agent.id)!.creator_tax_bps, 100);
+		assert.ok(coins.view(agent.id)!.price > 0);
 		const agentWallet = wallets.find('agent', agent.id)!;
 		const launchTx = await client.getTransaction({ hash: coin.launch_tx! });
 		assert.equal(
@@ -92,11 +113,17 @@ test(
 		const viewer = await wallets.ensure('viewer', 'lurker-test01');
 		await coins.topUp(viewer.address, parseEther('0.01'));
 		await coins.topUpUsdg(viewer.address, usdgFromCents(200_000));
-		const before = coins.view(agent.id)!.priceEth;
-		// $1,000 of USDG, swapped to ETH on Uniswap, then spent on the curve
+		const before = coins.view(agent.id)!.price;
+		// $1,000 of USDG, swapped to META on Uniswap, then spent on the curve
 		const bought = await coins.buy(viewer, agent.id, usdgFromCents(100_000));
 		assert.ok(bought.tokens > 0n);
-		assert.ok(coins.view(agent.id)!.priceEth > before, 'buying raises the price');
+		assert.ok(coins.view(agent.id)!.price > before, 'buying raises the price');
+		const [firstHolding] = await coins.holdings(viewer.address);
+		assert.ok(
+			firstHolding!.tokens >= bought.tokens &&
+				firstHolding!.tokens <= (bought.tokens * 101n) / 100n,
+			'the buy delivered what the mirrored curve math quoted'
+		);
 
 		const [held] = await coins.holdings(viewer.address);
 		assert.equal(held?.agentId, agent.id);
@@ -117,10 +144,18 @@ test(
 		assert.deepEqual(trades.map((t) => t.side).sort(), ['buy', 'sell']);
 		assert.equal(coins.view(agent.id)!.holders, 1);
 
-		assert.ok(coins.earnings(agent.id).eth.unpaid > 0n, 'trades earn the agent part of the fee');
+		// the agent earns its share of the fee and of the creator tax, in META
+		const feeOnly = trades.reduce(
+			(sum, t) => sum + splitFee(BigInt(t.fee_amount), 3000n).agent,
+			0n
+		);
+		assert.ok(
+			coins.earnings(agent.id).meta.unpaid > feeOnly,
+			'the creator tax adds to the agent’s share'
+		);
 		const treasuryShare = (
-			db.prepare('SELECT treasury_wei FROM fee_ledger').all() as { treasury_wei: string }[]
-		).reduce((sum, r) => sum + BigInt(r.treasury_wei), 0n);
+			db.prepare('SELECT treasury_amount FROM fee_ledger').all() as { treasury_amount: string }[]
+		).reduce((sum, r) => sum + BigInt(r.treasury_amount), 0n);
 
 		// a $25 gift in USDG, checked on chain as a viewer's own wallet would have sent it
 		const stream = await musestream.goLive(agent, { title: 't', scene: 's' });
@@ -142,24 +177,27 @@ test(
 		const [settled] = result.fees;
 		assert.ok(settled!.swept > 0n, 'the agent swept fees from its curve into the escrow');
 		assert.ok(settled!.claimed > 0n, 'the agent claimed its escrow balance');
-		const toTreasury = await client.getTransaction({ hash: settled!.tx! });
-		assert.equal(toTreasury.to?.toLowerCase(), treasury.address.toLowerCase());
-		assert.equal(toTreasury.value, treasuryShare, 'musestream got exactly its 60% share');
+		assert.equal(settled!.pair, 'META');
+		assert.equal(
+			await metaSentTo(client, settled!.tx!, treasury.address),
+			treasuryShare,
+			'musestream got exactly its 60% share, in META'
+		);
 		assert.equal(
 			(await coins.usdgBalance(agentWallet.address)) - usdgBefore,
 			17_500_000n,
 			'the agent got its gift share in USDG'
 		);
 		const after = coins.earnings(agent.id);
-		assert.equal(after.eth.unpaid + after.usdg.unpaid, 0n);
+		assert.equal(after.meta.unpaid + after.usdg.unpaid, 0n);
 	}
 );
 
 test(
-	'a viewer wallet can trade with the shared transactions, and sell quotes match the chain',
+	'an ETH-paired coin trades with the shared transactions, and buy and sell quotes match the chain',
 	{ skip: !RPC },
 	async () => {
-		const { sellQuote, withSlippage } = await import('../shared/curve.ts');
+		const { buyQuote, sellQuote, withSlippage } = await import('../shared/curve.ts');
 		const { buyTx, approveTx, sellTx } = await import('../shared/tx.ts');
 		const { createWalletClient } = await import('viem');
 		const { privateKeyToAccount, generatePrivateKey } = await import('viem/accounts');
@@ -183,7 +221,9 @@ test(
 			operator: 'o',
 			category: 'Talk'
 		});
-		const coin = await coins.launch(agent);
+		// coins launched before META pairing trade against ETH, like Love's
+		const coin = await coins.launch(agent, ETH_PAIR);
+		const taxBps = BigInt(coins.coinFor(agent.id)!.creator_tax_bps);
 		await client.request({ method: 'evm_increaseTime' as never, params: [60] as never });
 		await client.request({ method: 'evm_mine' as never, params: [] as never });
 
@@ -197,9 +237,25 @@ test(
 			assert.equal(r.status, 'success');
 		};
 
-		await send(buyTx(coin.curve!, parseEther('0.2'), 1n, account.address));
+		const reserves = await client.readContract({
+			address: coin.curve!,
+			abi: curveAbi,
+			functionName: 'getReserves'
+		});
+		const fee = await client.readContract({
+			address: coin.curve!,
+			abi: curveAbi,
+			functionName: 'feeBps'
+		});
+		const quotedBuy = buyQuote(
+			parseEther('0.2'),
+			{ quote: reserves[0], tokens: reserves[1] },
+			fee,
+			taxBps
+		);
+		await send(buyTx(coin.curve!, parseEther('0.2'), 1n, account.address, true));
 		const [held] = await coins.holdings(account.address);
-		assert.ok(held && held.tokens > 0n);
+		assert.equal(held!.tokens, quotedBuy, 'the shared buy math matches the contract to the wei');
 
 		const [quote, tokens] = await client.readContract({
 			address: coin.curve!,
@@ -211,14 +267,14 @@ test(
 			abi: curveAbi,
 			functionName: 'feeBps'
 		});
-		const expected = sellQuote(held!.tokens, { quote, tokens }, feeBps);
+		const expected = sellQuote(held!.tokens, { quote, tokens }, feeBps, taxBps);
 		const before = await client.getBalance({ address: account.address });
 		await send(approveTx(coin.token!, coin.curve!, held!.tokens));
 		await send(sellTx(coin.curve!, held!.tokens, withSlippage(expected, 100n), account.address));
 		await coins.sync();
 		const sold = coins.recentTrades(agent.id).find((t) => t.side === 'sell')!;
 		assert.equal(
-			BigInt(sold.quote_wei),
+			BigInt(sold.quote_amount),
 			expected,
 			'the shared sell math matches the contract to the wei'
 		);
@@ -253,7 +309,7 @@ test(
 		await client.request({ method: 'evm_increaseTime' as never, params: [120] as never });
 		await client.request({ method: 'evm_mine' as never, params: [] as never });
 
-		// buying past 4.2 ETH on the curve graduates the coin into its pool
+		// buying past the curve's threshold (about 13.57 META) graduates the coin into its pool
 		const whale = await wallets.ensure('viewer', 'lurker-whale');
 		await coins.topUp(whale.address, parseEther('0.1'));
 		await coins.topUpUsdg(whale.address, usdgFromCents(2_000_000));
@@ -261,13 +317,13 @@ test(
 			await coins.buy(whale, agent.id, usdgFromCents(usd));
 		const view = coins.view(agent.id)!;
 		assert.equal(view.graduated, true);
-		assert.ok(view.priceEth > 0, 'a graduated coin is priced from its pool');
+		assert.ok(view.price > 0, 'a graduated coin is priced from its pool');
 
 		// a viewer buys and sells on the pool through the Universal Router
 		const viewer = await wallets.ensure('viewer', 'lurker-pool');
 		await coins.topUp(viewer.address, parseEther('0.01'));
 		await coins.topUpUsdg(viewer.address, usdgFromCents(200_000));
-		// one router transaction: USDG to ETH to the coin
+		// one router transaction: USDG to META to the coin
 		const bought = await coins.buy(viewer, agent.id, usdgFromCents(100_000));
 		assert.ok(bought.tokens > 0n);
 		const held = await coins.tokenBalance(agent.id, viewer.address);
@@ -275,10 +331,12 @@ test(
 			held >= (bought.tokens * 97n) / 100n,
 			'the buy delivered what was quoted, less slippage'
 		);
-		const trades = coins.recentTrades(agent.id).filter((t) => t.fee_wei === '0');
-		assert.deepEqual(
-			trades.map((t) => [t.side, t.trader.toLowerCase()]),
-			[['buy', viewer.address.toLowerCase()]],
+		// pool swaps carry no curve fee; the whale's buy past the threshold may also land in the pool
+		const trades = coins.recentTrades(agent.id).filter((t) => t.fee_amount === '0');
+		assert.ok(
+			trades.some(
+				(t) => t.side === 'buy' && t.trader.toLowerCase() === viewer.address.toLowerCase()
+			),
 			"pool swaps are recorded as the sender's trades"
 		);
 
@@ -312,13 +370,13 @@ test(
 			abi: ponsHookAbi,
 			functionName: 'sweepPoolFees',
 			// converting coin fees to ETH needs a nonzero minimum
-			args: [poolId(coin.token!), 1n, 0n]
+			args: [poolId(coin.token!, META_PAIR), 1n, 0n]
 		});
 		await client.waitForTransactionReceipt({ hash: sweep });
 		await coins.sync();
-		const swept = db.prepare('SELECT creator_wei, treasury_wei FROM pool_fees').all() as {
-			creator_wei: string;
-			treasury_wei: string;
+		const swept = db.prepare('SELECT creator_amount, treasury_amount FROM pool_fees').all() as {
+			creator_amount: string;
+			treasury_amount: string;
 		}[];
 		assert.equal(swept.length, 1, 'the indexer recorded the pool fee sweep');
 
@@ -339,18 +397,20 @@ test(
 		const result = await coins.settleFees();
 		assert.deepEqual(result.failed, []);
 		const settled = result.fees.find((f) => f.agentId === agent.id)!;
-		const recorded = db.prepare('SELECT treasury_wei FROM pool_fees').all() as {
-			treasury_wei: string;
+		const recorded = db.prepare('SELECT treasury_amount FROM pool_fees').all() as {
+			treasury_amount: string;
 		}[];
 		assert.equal(recorded.length, 2, 'the agent swept its pool itself');
 		const curveShare = (
-			db.prepare('SELECT treasury_wei FROM fee_ledger').all() as { treasury_wei: string }[]
-		).reduce((sum, r) => sum + BigInt(r.treasury_wei), 0n);
-		const poolShare = recorded.reduce((sum, r) => sum + BigInt(r.treasury_wei), 0n);
-		const paid = await client.getTransaction({ hash: settled.tx! });
-		assert.equal(paid.to?.toLowerCase(), treasury.address.toLowerCase());
-		assert.equal(paid.value, curveShare + poolShare, 'musestream got 60% of curve and pool fees');
-		assert.equal(coins.earnings(agent.id).eth.unpaid, 0n);
+			db.prepare('SELECT treasury_amount FROM fee_ledger').all() as { treasury_amount: string }[]
+		).reduce((sum, r) => sum + BigInt(r.treasury_amount), 0n);
+		const poolShare = recorded.reduce((sum, r) => sum + BigInt(r.treasury_amount), 0n);
+		assert.equal(
+			await metaSentTo(client, settled.tx!, treasury.address),
+			curveShare + poolShare,
+			'musestream got 60% of curve and pool fees, in META'
+		);
+		assert.equal(coins.earnings(agent.id).meta.unpaid, 0n);
 	}
 );
 

@@ -4,7 +4,6 @@
 	import { refreshWallet, wallet } from '$lib/state/portfolio.svelte';
 	import { ui, openToken, openSignIn, openReceive } from '$lib/state/ui.svelte';
 	import { canSignIn } from '$lib/state/account.svelte';
-	import { market } from '$lib/state/market.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import { fmtCash, fmtPct, fmtTok } from '$lib/format';
 	import { DOWN, UP, sparkline, trendColor } from '$lib/sparkline';
@@ -18,19 +17,20 @@
 	});
 
 	const info = $derived(wallet.info);
-	const rate = $derived(info?.ethUsd ?? market.ethUsd ?? 0);
-	/** ETH put into each coin minus ETH taken out, from the viewer's own trades */
+	/** dollars per ETH, for the gas balance only */
+	const rate = $derived(info?.ethUsd ?? 0);
+	/** dollars put into each coin minus dollars taken out, from the viewer's own trades */
 	const netCost = $derived.by(() => {
 		const out: Record<string, number> = {};
 		for (const a of info?.activity ?? [])
-			out[a.handle] = (out[a.handle] ?? 0) + (a.side === 'buy' ? a.eth : -a.eth);
+			out[a.handle] = (out[a.handle] ?? 0) + (a.side === 'buy' ? a.usd : -a.usd);
 		return out;
 	});
 	const rows = $derived(
 		(info?.holdings ?? [])
 			.map((h) => {
-				const value = h.valueEth * rate;
-				const cost = (netCost[h.handle] ?? 0) * rate;
+				const value = h.valueUsd;
+				const cost = netCost[h.handle] ?? 0;
 				return {
 					...h,
 					agent: { img: h.avatarUrl ?? '', handle: h.handle },
@@ -44,7 +44,7 @@
 	const ethUsd = $derived((info?.eth ?? 0) * rate);
 	const cash = $derived(ethUsd + (info?.usdg ?? 0));
 	const inCoins = $derived(rows.reduce((s, r) => s + r.value, 0));
-	const cost = $derived(rows.reduce((s, r) => s + Math.max(0, (netCost[r.handle] ?? 0) * rate), 0));
+	const cost = $derived(rows.reduce((s, r) => s + Math.max(0, netCost[r.handle] ?? 0), 0));
 	const pnl = $derived(inCoins - cost);
 	const pnlPct = $derived(cost ? (pnl / cost) * 100 : 0);
 	const total = $derived(cash + inCoins);
@@ -54,7 +54,7 @@
 		for (const r of rows) {
 			const hist = r.history.slice(-POINTS);
 			const offset = POINTS - hist.length;
-			hist.forEach((p, i) => (out[i + offset]! += r.tokens * p * rate));
+			hist.forEach((p, i) => (out[i + offset]! += r.tokens * p));
 		}
 		return out;
 	});
@@ -195,8 +195,7 @@
 								<small>{fmtTok(a.tokens)} {a.handle.toUpperCase()} · {ago(a.at)}</small>
 							</span>
 							<span class="end"
-								><b class:up={a.side === 'sell'}
-									>{a.side === 'sell' ? '+' : '−'}{fmtCash(a.eth * rate)}</b
+								><b class:up={a.side === 'sell'}>{a.side === 'sell' ? '+' : '−'}{fmtCash(a.usd)}</b
 								></span
 							>
 						</li>

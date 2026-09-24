@@ -2,13 +2,13 @@ import { json } from '@sveltejs/kit';
 import { formatEther } from 'viem';
 import { coins, ethPrice, musestream } from '$lib/server/app';
 import { handle } from '$lib/server/http';
-import { publicCoin } from '$lib/server/market';
+import { publicCoin, publicTrade } from '$lib/server/market';
 import { viewerWallet } from '$lib/server/viewer';
 import { linkedAddress } from '$lib/server/session';
 import type { AgentRow } from '$lib/server/service';
 import { usdgToUsd } from '$shared/usdg';
 
-/** The viewer's wallet: ETH, USDG for gifts, coins held, and their trades. */
+/** The viewer's wallet: USDG (their money), coins held in dollars, their trades, and ETH for gas. */
 export const GET = (event) =>
 	handle(async () => {
 		// a signed-in viewer's own wallet, or the server-held test wallet
@@ -30,7 +30,7 @@ export const GET = (event) =>
 				avatarUrl: agent.avatar_url,
 				live: !!musestream.currentStream(agent.id),
 				tokens,
-				valueEth: coin ? tokens * coin.priceEth : 0,
+				valueUsd: coin?.priceUsd ? tokens * coin.priceUsd : 0,
 				history: coin?.history ?? []
 			};
 		});
@@ -43,12 +43,8 @@ export const GET = (event) =>
 			usdg: usdgToUsd(usdg),
 			holdings,
 			activity: coins!.tradesBy(address, 30).map((t) => ({
-				side: t.side,
-				handle: musestream.agentById(t.agent_id)?.handle ?? '',
-				eth: Number(formatEther(BigInt(t.quote_wei))),
-				tokens: Number(formatEther(BigInt(t.tokens))),
-				at: t.at,
-				tx: t.tx
+				...publicTrade(t),
+				handle: musestream.agentById(t.agent_id)?.handle ?? ''
 			}))
 		});
 	});

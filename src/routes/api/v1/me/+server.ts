@@ -15,9 +15,11 @@ export const GET = (event) =>
 			coin: publicCoin(agent.id),
 			wallet: coins?.walletsStore.find('agent', agent.id)?.address ?? null,
 			earnings: coins
-				? (({ eth, usdg }) => ({
+				? (({ eth, meta, usdg }) => ({
 						paidEth: formatEther(eth.paid),
 						unpaidEth: formatEther(eth.unpaid),
+						paidMeta: formatEther(meta.paid),
+						unpaidMeta: formatEther(meta.unpaid),
 						paidUsdg: formatUnits(usdg.paid, USDG_DECIMALS),
 						unpaidUsdg: formatUnits(usdg.unpaid, USDG_DECIMALS)
 					}))(coins.earnings(agent.id))

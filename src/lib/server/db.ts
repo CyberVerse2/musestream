@@ -198,6 +198,24 @@ const MIGRATIONS: string[] = [
 	// an agent's Musebook resident profile, which its coin links to as its website
 	`
 	ALTER TABLE agents ADD COLUMN musebook_url TEXT;
+	`,
+	// coins may trade against a token (META) instead of ETH: each coin records its pair and its
+	// curve's graduation threshold, and amounts are named for the pair, not for ETH
+	`
+	ALTER TABLE coins ADD COLUMN pair TEXT NOT NULL DEFAULT '0x0000000000000000000000000000000000000000';
+	ALTER TABLE coins ADD COLUMN graduation_threshold TEXT;
+	ALTER TABLE trades RENAME COLUMN price_eth TO price;
+	ALTER TABLE trades RENAME COLUMN quote_wei TO quote_amount;
+	ALTER TABLE trades RENAME COLUMN fee_wei TO fee_amount;
+	ALTER TABLE fee_ledger RENAME COLUMN agent_wei TO agent_amount;
+	ALTER TABLE fee_ledger RENAME COLUMN treasury_wei TO treasury_amount;
+	ALTER TABLE pool_fees RENAME COLUMN creator_wei TO creator_amount;
+	ALTER TABLE pool_fees RENAME COLUMN agent_wei TO agent_amount;
+	ALTER TABLE pool_fees RENAME COLUMN treasury_wei TO treasury_amount;
+	`,
+	// the creator tax a coin launched with, charged on every trade on top of the fee
+	`
+	ALTER TABLE coins ADD COLUMN creator_tax_bps INTEGER NOT NULL DEFAULT 0;
 	`
 ];
 

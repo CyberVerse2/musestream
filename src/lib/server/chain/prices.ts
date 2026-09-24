@@ -1,4 +1,7 @@
-// The ETH/USD rate, from Codex (WETH on Ethereum). Cached, and never older than 5 minutes.
+// Dollar prices: the ETH/USD rate from Codex (WETH on Ethereum), and each coin pair's rate.
+// Cached, and never older than 5 minutes.
+import type { Pair } from '../../../../shared/pairs.ts';
+
 const WETH = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
 const FRESH_MS = 60_000;
 const STALE_MS = 5 * 60_000;
@@ -50,5 +53,45 @@ export class EthPrice {
 		} catch {
 			return null;
 		}
+	}
+}
+
+/**
+ * Dollars per unit of a coin's pair, for showing prices. ETH comes from Codex; META from its
+ * USDG market on Uniswap, which is where viewers' trades actually swap.
+ */
+export class PairPrices {
+	private eth: EthPrice;
+	private quote: (pair: Pair, pairIn: boolean, amountIn: bigint) => Promise<bigint>;
+	private cached = new Map<Pair['symbol'], { usd: number; at: number }>();
+
+	constructor(
+		eth: EthPrice,
+		quote: (pair: Pair, pairIn: boolean, amountIn: bigint) => Promise<bigint>
+	) {
+		this.eth = eth;
+		this.quote = quote;
+	}
+
+	async usd(pair: Pair): Promise<number | null> {
+		if (pair.native) return this.eth.usd();
+		const hit = this.cached.get(pair.symbol);
+		if (hit && Date.now() - hit.at < FRESH_MS) return hit.usd;
+		try {
+			// the USDG one whole unit of the pair sells for now; USDG has 6 decimals
+			const usdg = await this.quote(pair, true, 10n ** BigInt(pair.decimals));
+			const usd = Number(usdg) / 1e6;
+			this.cached.set(pair.symbol, { usd, at: Date.now() });
+			return usd;
+		} catch {
+			return hit && Date.now() - hit.at < STALE_MS ? hit.usd : null;
+		}
+	}
+
+	/** the cached price without waiting, for hot paths */
+	peek(pair: Pair): number | null {
+		if (pair.native) return this.eth.peek();
+		const hit = this.cached.get(pair.symbol);
+		return hit && Date.now() - hit.at < STALE_MS ? hit.usd : null;
 	}
 }

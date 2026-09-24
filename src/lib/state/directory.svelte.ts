@@ -1,7 +1,7 @@
 // Which agents are live right now, kept in step with the server.
 import { api, type PublicStream } from '../api';
 import type { Agent } from '../data';
-import { market, setCoin } from './market.svelte';
+import { setCoin } from './market.svelte';
 
 export const directory = $state({
 	agents: [] as Agent[],
@@ -39,8 +39,7 @@ function fromStream(s: PublicStream): Agent {
 /** Merge the server's list in place, so cards on screen keep their identity. */
 export async function refreshDirectory() {
 	try {
-		const { streams, ethUsd } = await api.liveStreams();
-		if (ethUsd) market.ethUsd = ethUsd;
+		const { streams } = await api.liveStreams();
 		const next = streams.map((s) => {
 			const fresh = fromStream(s);
 			setCoin(fresh.id, s.coin);

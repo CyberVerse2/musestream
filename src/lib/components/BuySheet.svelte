@@ -3,7 +3,7 @@
 	import { onDestroy } from 'svelte';
 	import { closeSheet, openReceive } from '$lib/state/ui.svelte';
 	import { buy, refreshWallet, balanceUsd, wallet } from '$lib/state/portfolio.svelte';
-	import { coinOf, market } from '$lib/state/market.svelte';
+	import { coinOf } from '$lib/state/market.svelte';
 	import { agentById } from '$lib/state/directory.svelte';
 	import { fmtCash, fmtPrice, fmtTok, fmtUsd } from '$lib/format';
 	import Sheet from './Sheet.svelte';
@@ -24,9 +24,8 @@
 	const sym = $derived(id.toUpperCase());
 	const agent = $derived(agentById(id));
 	const tok = $derived(coinOf(id));
-	const eth = $derived(market.ethUsd ? usd / market.ethUsd : 0);
 	// before price impact; the server applies the exact curve math and a 3% slippage limit
-	const tokens = $derived(tok && tok.price > 0 ? (usd * 0.99) / tok.price : 0);
+	const tokens = $derived(tok && tok.price > 0 ? (usd * (1 - tok.feePct / 100)) / tok.price : 0);
 	const balance = $derived(balanceUsd());
 	const short = $derived(wallet.loaded && usd > balance);
 
@@ -76,7 +75,7 @@
 		<dl class="rows">
 			<div>
 				<dt>You pay</dt>
-				<dd>≈ {eth.toFixed(5)} ETH</dd>
+				<dd>{fmtUsd(usd)} USDG</dd>
 			</div>
 			<div>
 				<dt>You get</dt>
@@ -84,7 +83,7 @@
 			</div>
 			<div>
 				<dt>Fee</dt>
-				<dd>1% · a share goes to {agent.name}</dd>
+				<dd>{tok.feePct}% · a share goes to {agent.name}</dd>
 			</div>
 		</dl>
 
@@ -99,7 +98,7 @@
 		<p class="note">
 			{wallet.info?.testMoney ? 'Test money on a local chain. ' : ''}{tok.graduated
 				? 'This coin trades in its Uniswap pool.'
-				: 'The coin moves to its Uniswap pool when 4.2 ETH is in its curve.'}
+				: `The coin moves to its Uniswap pool when ${fmtTok(tok.graduatesAt)} ${tok.pair} is in its curve.`}
 		</p>
 	{:else}
 		<div class="done">

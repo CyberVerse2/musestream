@@ -1,8 +1,7 @@
-// Uniswap V4 on Robinhood Chain: a graduated coin's pool, and the USDG/ETH pool that turns
-// the app's dollars into the ETH coins trade in. A Pons coin graduates into one pool: native
-// ETH against the coin, no LP fee, the Pons hook charging the trade fee.
-// The browser and the server build the same transactions here, so the fork test checks
-// exactly what users sign.
+// Uniswap V4 on Robinhood Chain: a graduated coin's pool (its pair against the coin, the Pons
+// hook charging the trade fee, no LP fee), and each pair's USDG market, which turns the app's
+// dollars into the pair and back. The browser and the server build the same transactions
+// here, so the fork test checks exactly what users sign.
 import {
 	encodeAbiParameters,
 	encodeFunctionData,
@@ -13,7 +12,10 @@ import {
 	type Address
 } from 'viem';
 import type { TxRequest } from './tx.ts';
+import { sortCurrencies, type Pair, type PoolKey } from './pairs.ts';
 import { USDG } from './usdg.ts';
+
+export type { PoolKey } from './pairs.ts';
 
 /** Uniswap's deployments on Robinhood Chain (developers.uniswap.org, v4 deployments) */
 export const POOL_MANAGER: Address = '0x8366a39cc670b4001a1121b8f6a443a643e40951';
@@ -27,21 +29,13 @@ export const PONS_MEME_HOOK: Address = '0xE5e702641Ea86F4ae6cC3cDaeD2B886f976Be0
 /** graduated pools have no LP fee (the hook charges it) and tick spacing 200 */
 export const PONS_POOL_FEE = 0;
 export const PONS_TICK_SPACING = 200;
-const ETH: Address = '0x0000000000000000000000000000000000000000';
 
-export interface PoolKey {
-	currency0: Address;
-	currency1: Address;
-	fee: number;
-	tickSpacing: number;
-	hooks: Address;
-}
-
-/** ETH sorts first, so it is always currency0 and the coin currency1 */
-export function poolKey(token: Address): PoolKey {
+/** a graduated coin's pool: its pair against the coin */
+export function poolKey(token: Address, pair: Pair): PoolKey {
+	const [currency0, currency1] = sortCurrencies(pair.address, token);
 	return {
-		currency0: ETH,
-		currency1: token,
+		currency0,
+		currency1,
 		fee: PONS_POOL_FEE,
 		tickSpacing: PONS_TICK_SPACING,
 		hooks: PONS_MEME_HOOK
@@ -60,8 +54,8 @@ const poolKeyType = {
 } as const;
 
 /** the pool id: keccak256(abi.encode(PoolKey)) */
-export function poolId(token: Address): `0x${string}` {
-	const k = poolKey(token);
+export function poolId(token: Address, pair: Pair): `0x${string}` {
+	const k = poolKey(token, pair);
 	return keccak256(
 		encodeAbiParameters(
 			[
@@ -76,10 +70,15 @@ export function poolId(token: Address): `0x${string}` {
 	);
 }
 
-/** ETH per token from the pool's sqrtPriceX96 (token per ETH, squared); for display only */
-export function priceFromSqrt(sqrtPriceX96: bigint): number {
-	const tokensPerEth = (Number(sqrtPriceX96) / 2 ** 96) ** 2;
-	return tokensPerEth > 0 ? 1 / tokensPerEth : 0;
+/**
+ * The coin's price in its pair from the pool's sqrtPriceX96, for display only. The squared
+ * price is currency1 per currency0; both have 18 decimals.
+ */
+export function priceInPair(sqrtPriceX96: bigint, token: Address, pair: Pair): number {
+	const oneInZero = (Number(sqrtPriceX96) / 2 ** 96) ** 2;
+	const coinIsZero = sortCurrencies(pair.address, token)[0].toLowerCase() === token.toLowerCase();
+	if (!oneInZero) return 0;
+	return coinIsZero ? oneInZero : 1 / oneInZero;
 }
 
 export const quoterAbi = [
@@ -195,6 +194,11 @@ const erc20Approve = [
 	}
 ] as const;
 
+/**
+ * The Universal Router on Robinhood Chain (v2.1.x) extends Uniswap's single-swap struct with
+ * `minHopPriceX36`, a per-hop price floor; 0 turns it off. Leaving the field out misaligns
+ * `hookData`, which some swaps survive by accident and others do not.
+ */
 const exactInputSingleType = {
 	type: 'tuple',
 	components: [
@@ -202,6 +206,7 @@ const exactInputSingleType = {
 		{ name: 'zeroForOne', type: 'bool' },
 		{ name: 'amountIn', type: 'uint128' },
 		{ name: 'amountOutMinimum', type: 'uint128' },
+		{ name: 'minHopPriceX36', type: 'uint256' },
 		{ name: 'hookData', type: 'bytes' }
 	]
 } as const;
@@ -212,11 +217,15 @@ const SWAP_EXACT_IN_SINGLE = 0x06;
 const SETTLE_ALL = 0x0c;
 const TAKE_ALL = 0x0f;
 
-/** one hop: a pool and which way through it (`zeroForOne`: currency0 in, currency1 out) */
+/** one hop: a pool, and the currency paid into it */
 interface Hop {
 	key: PoolKey;
-	zeroForOne: boolean;
+	currencyIn: Address;
 }
+
+const same = (a: Address, b: Address) => a.toLowerCase() === b.toLowerCase();
+const zeroForOne = (hop: Hop) => same(hop.currencyIn, hop.key.currency0);
+const outOf = (hop: Hop) => (zeroForOne(hop) ? hop.key.currency1 : hop.key.currency0);
 
 /**
  * Exact-input swaps through the Universal Router, chained: the first hop takes `amountIn`,
@@ -224,10 +233,8 @@ interface Hop {
  * credit"), and the whole trade must deliver at least `minOut` of the last currency.
  */
 function swapData(hops: Hop[], amountIn: bigint, minOut: bigint, deadline: bigint) {
-	const first = hops[0]!;
-	const last = hops.at(-1)!;
-	const payIn = first.zeroForOne ? first.key.currency0 : first.key.currency1;
-	const takeOut = last.zeroForOne ? last.key.currency1 : last.key.currency0;
+	const payIn = hops[0]!.currencyIn;
+	const takeOut = outOf(hops.at(-1)!);
 	const input = encodeAbiParameters(
 		[{ type: 'bytes' }, { type: 'bytes[]' }],
 		[
@@ -243,9 +250,10 @@ function swapData(hops: Hop[], amountIn: bigint, minOut: bigint, deadline: bigin
 						[
 							{
 								poolKey: hop.key,
-								zeroForOne: hop.zeroForOne,
+								zeroForOne: zeroForOne(hop),
 								amountIn: i === 0 ? amountIn : 0n,
 								amountOutMinimum: i === hops.length - 1 ? minOut : 0n,
+								minHopPriceX36: 0n,
 								hookData: '0x'
 							}
 						]
@@ -263,47 +271,66 @@ function swapData(hops: Hop[], amountIn: bigint, minOut: bigint, deadline: bigin
 	});
 }
 
-/** Uniswap's USDG/ETH pool with a 0.01% fee: the deepest dollar market on Robinhood Chain */
-export function usdgPoolKey(): PoolKey {
-	return { currency0: ETH, currency1: USDG, fee: 100, tickSpacing: 1, hooks: ETH };
-}
-const usdgToEth: Hop = { key: usdgPoolKey(), zeroForOne: false };
-const ethToUsdg: Hop = { key: usdgPoolKey(), zeroForOne: true };
-const coinHop = (token: Address, buy: boolean): Hop => ({ key: poolKey(token), zeroForOne: buy });
+const fromUsdg = (pair: Pair): Hop => ({ key: pair.usdgPool, currencyIn: USDG });
+const toUsdg = (pair: Pair): Hop => ({ key: pair.usdgPool, currencyIn: pair.address });
+const intoCoin = (token: Address, pair: Pair): Hop => ({
+	key: poolKey(token, pair),
+	currencyIn: pair.address
+});
+const outOfCoin = (token: Address, pair: Pair): Hop => ({
+	key: poolKey(token, pair),
+	currencyIn: token
+});
 
-/** swap `usdg` for at least `minWei` ETH, e.g. to pay for a coin still on its curve */
-export function usdgToEthTx(usdg: bigint, minWei: bigint, deadline: bigint): TxRequest {
-	return { to: UNIVERSAL_ROUTER, data: swapData([usdgToEth], usdg, minWei, deadline) };
+/** swap `usdg` for at least `minOut` of the pair, e.g. to pay for a coin still on its curve */
+export function usdgToPairTx(
+	pair: Pair,
+	usdg: bigint,
+	minOut: bigint,
+	deadline: bigint
+): TxRequest {
+	return { to: UNIVERSAL_ROUTER, data: swapData([fromUsdg(pair)], usdg, minOut, deadline) };
 }
 
-/** swap `wei` ETH for at least `minUsdg`, e.g. the proceeds of a sale on the curve */
-export function ethToUsdgTx(wei: bigint, minUsdg: bigint, deadline: bigint): TxRequest {
-	return { to: UNIVERSAL_ROUTER, value: wei, data: swapData([ethToUsdg], wei, minUsdg, deadline) };
+/** swap `amount` of the pair for at least `minUsdg`, e.g. a curve sale's proceeds */
+export function pairToUsdgTx(
+	pair: Pair,
+	amount: bigint,
+	minUsdg: bigint,
+	deadline: bigint
+): TxRequest {
+	return {
+		to: UNIVERSAL_ROUTER,
+		value: pair.native ? amount : undefined,
+		data: swapData([toUsdg(pair)], amount, minUsdg, deadline)
+	};
 }
 
-/** buy a graduated coin with `usdg`, through ETH, receiving at least `minTokens` */
+/** buy a graduated coin with `usdg`, through its pair, receiving at least `minTokens` */
 export function poolBuyTx(
 	token: Address,
+	pair: Pair,
 	usdg: bigint,
 	minTokens: bigint,
 	deadline: bigint
 ): TxRequest {
 	return {
 		to: UNIVERSAL_ROUTER,
-		data: swapData([usdgToEth, coinHop(token, true)], usdg, minTokens, deadline)
+		data: swapData([fromUsdg(pair), intoCoin(token, pair)], usdg, minTokens, deadline)
 	};
 }
 
-/** sell `tokens` of a graduated coin, through ETH, receiving at least `minUsdg` */
+/** sell `tokens` of a graduated coin, through its pair, receiving at least `minUsdg` */
 export function poolSellTx(
 	token: Address,
+	pair: Pair,
 	tokens: bigint,
 	minUsdg: bigint,
 	deadline: bigint
 ): TxRequest {
 	return {
 		to: UNIVERSAL_ROUTER,
-		data: swapData([coinHop(token, false), ethToUsdg], tokens, minUsdg, deadline)
+		data: swapData([outOfCoin(token, pair), toUsdg(pair)], tokens, minUsdg, deadline)
 	};
 }
 

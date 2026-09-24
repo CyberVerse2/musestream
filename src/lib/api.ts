@@ -16,18 +16,22 @@ export interface PublicAgent {
 	/** the agent's Musebook resident profile, when it gave one */
 	musebookUrl: string | null;
 }
-/** an agent's coin; prices in ETH, and in dollars when the ETH rate is known */
+/** an agent's coin, in dollars; null prices until the server knows its pair's rate */
 export interface PublicCoin {
 	status: 'launching' | 'live' | 'failed';
 	token: string | null;
-	priceEth: number;
+	/** what the coin trades against */
+	pair: 'ETH' | 'META';
 	priceUsd: number | null;
-	marketCapEth: number;
 	marketCapUsd: number | null;
 	graduationPct: number;
+	/** how much of the pair in the curve graduates the coin */
+	graduatesAt: number;
+	/** the fee on every trade, in percent */
+	feePct: number;
 	graduated: boolean;
 	holders: number;
-	/** recent prices in ETH, oldest first */
+	/** recent prices in dollars, oldest first */
 	history: number[];
 }
 export interface PublicStream {
@@ -43,13 +47,13 @@ export interface PublicStream {
 export interface PublicTrade {
 	side: 'buy' | 'sell';
 	trader: string;
-	eth: number;
+	/** dollars */
+	usd: number;
 	tokens: number;
 	at: number;
 	tx: string;
 }
 export interface CoinDetail {
-	ethUsd: number | null;
 	coin: PublicCoin;
 	trades: PublicTrade[];
 	holders: { trader: string; tokens: number; pct: number }[];
@@ -79,9 +83,11 @@ export interface WalletInfo {
 	ownWallet?: boolean;
 	/** a local test chain: the ETH here is not real money */
 	testMoney: boolean;
+	/** dollars per ETH, for showing the gas balance */
 	ethUsd: number | null;
+	/** ETH for gas */
 	eth: number;
-	/** dollars of USDG, which gifts are paid in */
+	/** dollars of USDG: the viewer's money */
 	usdg: number;
 	holdings: {
 		handle: string;
@@ -89,13 +95,15 @@ export interface WalletInfo {
 		avatarUrl: string | null;
 		live: boolean;
 		tokens: number;
-		valueEth: number;
+		/** dollars */
+		valueUsd: number;
 		history: number[];
 	}[];
 	activity: {
 		side: 'buy' | 'sell';
 		handle: string;
-		eth: number;
+		/** dollars */
+		usd: number;
 		tokens: number;
 		at: number;
 		tx: string;
@@ -137,7 +145,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-	liveStreams: () => request<{ ethUsd: number | null; streams: PublicStream[] }>('/api/streams'),
+	liveStreams: () => request<{ streams: PublicStream[] }>('/api/streams'),
 	coin: (handle: string) => request<CoinDetail>(`/api/coins/${handle}`),
 	buy: (handle: string, usd: number) =>
 		request<{ tx: string; usd: number; tokens: string; coin: PublicCoin }>(
@@ -173,7 +181,7 @@ export const api = {
 			`/api/coins/${handle}/quote?${new URLSearchParams(Object.entries(q).map(([k, v]) => [k, String(v)]))}`
 		),
 	candles: (handle: string, interval: Interval) =>
-		request<{ ethUsd: number | null; source: string; candles: Candle[] }>(
+		request<{ source: string; candles: Candle[] }>(
 			`/api/coins/${handle}/candles?interval=${interval}`
 		),
 	chat: (streamId: string, text: string) =>

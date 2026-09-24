@@ -63,7 +63,7 @@
 		</div>
 
 		{#if !filtering}
-			<h2 class="section-title">Close to graduating <small>at 4.2 ETH in the curve</small></h2>
+			<h2 class="section-title">Close to graduating <small>to their Uniswap pools</small></h2>
 			<div class="rail">
 				{#each graduating as a (a.id)}
 					{@const tok = coinOf(a.id) as CoinView}

@@ -20,14 +20,13 @@
 	const agent = $derived(agentById(id));
 	const delta = $derived(tok ? deltaOf(tok) : 0);
 	const held = $derived(holdingOf(id));
-	/** ETH spent on this coin minus ETH taken out, from the viewer's own trades */
+	/** dollars spent on this coin minus dollars taken out, from the viewer's own trades */
 	const netCostUsd = $derived.by(() => {
-		const rate = market.ethUsd ?? 0;
-		let eth = 0;
+		let usd = 0;
 		for (const a of wallet.info?.activity ?? []) {
-			if (a.handle === id) eth += a.side === 'buy' ? a.eth : -a.eth;
+			if (a.handle === id) usd += a.side === 'buy' ? a.usd : -a.usd;
 		}
-		return eth * rate;
+		return usd;
 	});
 	const heldValue = $derived(held && tok ? held.tokens * tok.price : 0);
 	const heldPnl = $derived(netCostUsd > 0 ? ((heldValue - netCostUsd) / netCostUsd) * 100 : 0);
@@ -104,7 +103,7 @@
 				>
 			{/each}
 		</div>
-		<CandleChart {candles} ethUsd={market.ethUsd} />
+		<CandleChart {candles} />
 
 		<dl class="facts">
 			<div>
@@ -124,7 +123,8 @@
 				<div class="grad-row"><span>Graduation</span><b>{tok.graduationPct.toFixed(0)}%</b></div>
 				<span class="bar"><GradBar pct={tok.graduationPct} height={6} /></span>
 				<p>
-					When 4.2 ETH is in the bonding curve, the coin moves to Uniswap and trades on the open
+					When {fmtTok(tok.graduatesAt)}
+					{tok.pair} is in the bonding curve, the coin moves to its Uniswap pool and trades on the open
 					market.
 				</p>
 			</div>
@@ -181,7 +181,7 @@
 				<li>
 					<span class="side {t.side}">{t.side === 'buy' ? 'Buy' : 'Sell'}</span>
 					<span class="who">{t.trader.toLowerCase() === me ? 'you' : short(t.trader)}</span>
-					<span>{fmtUsd(t.eth * (market.ethUsd ?? 0))}</span>
+					<span>{fmtUsd(t.usd)}</span>
 					<span class="dim">{ago(t.at)}</span>
 				</li>
 			{:else}

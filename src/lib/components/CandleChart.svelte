@@ -1,9 +1,9 @@
 <script lang="ts">
-	// Candlestick chart for a coin, drawn on canvas. Prices arrive in ETH and show in dollars.
+	// Candlestick chart for a coin, drawn on canvas. Prices arrive in dollars.
 	import type { Candle } from '$shared/candles';
 	import { UP, DOWN } from '$lib/sparkline';
 
-	let { candles, ethUsd }: { candles: Candle[]; ethUsd: number | null } = $props();
+	let { candles }: { candles: Candle[] } = $props();
 
 	let canvas = $state<HTMLCanvasElement | null>(null);
 	let width = $state(0);
@@ -12,7 +12,6 @@
 	$effect(() => {
 		const node = canvas;
 		if (!node || !width || !candles.length) return;
-		const rate = ethUsd ?? 1;
 		const dpr = window.devicePixelRatio || 1;
 		node.width = Math.round(width * dpr);
 		node.height = Math.round(height * dpr);
@@ -24,8 +23,8 @@
 		let lo = Infinity;
 		let hi = -Infinity;
 		for (const c of candles) {
-			lo = Math.min(lo, c.low * rate);
-			hi = Math.max(hi, c.high * rate);
+			lo = Math.min(lo, c.low);
+			hi = Math.max(hi, c.high);
 		}
 		if (hi - lo < hi * 1e-6) {
 			// a flat stretch: give it some room instead of dividing by zero
@@ -43,11 +42,11 @@
 			g.strokeStyle = g.fillStyle = up ? UP : DOWN;
 			g.lineWidth = 1;
 			g.beginPath();
-			g.moveTo(x, y(c.high * rate));
-			g.lineTo(x, y(c.low * rate));
+			g.moveTo(x, y(c.high));
+			g.lineTo(x, y(c.low));
 			g.stroke();
-			const top = y(Math.max(c.open, c.close) * rate);
-			const bottom = y(Math.min(c.open, c.close) * rate);
+			const top = y(Math.max(c.open, c.close));
+			const bottom = y(Math.min(c.open, c.close));
 			g.fillRect(x - body / 2, top, body, Math.max(1, bottom - top));
 		});
 	});

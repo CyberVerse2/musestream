@@ -7,7 +7,7 @@ import { createPublicClient, http, parseEther } from 'viem';
 import { robinhood } from 'viem/chains';
 import { Charts } from './chain/charts.ts';
 import { Coins } from './chain/coins.ts';
-import { EthPrice } from './chain/prices.ts';
+import { EthPrice, PairPrices } from './chain/prices.ts';
 import { DynamicWallets } from './chain/dynamic-wallets.ts';
 import { LocalWallets, Sealer, Wallets, type WalletProvider } from './chain/wallets.ts';
 import { openDb } from './db.ts';
@@ -110,7 +110,11 @@ function makeCoins(): Coins | null {
 	});
 }
 export const coins = makeCoins();
-export const charts = coins ? new Charts(coins, env.CODEX_API_KEY) : null;
+/** dollars per unit of each coin pair: ETH from Codex, META from its USDG market */
+export const pairPrices = coins
+	? new PairPrices(ethPrice, (pair, pairIn, amount) => coins.pairQuote(pair, pairIn, amount))
+	: null;
+export const charts = coins && pairPrices ? new Charts(coins, pairPrices, env.CODEX_API_KEY) : null;
 export const wallets = coins ? coins.walletsStore : null;
 
 // background work: index trades, settle fees. Replaced on dev reloads, never doubled.

@@ -2,8 +2,6 @@
 import type { PublicCoin } from '../api';
 
 export const market = $state({
-	/** dollars per ETH; null until the server knows it */
-	ethUsd: null as number | null,
 	coins: {} as Record<string, PublicCoin>
 });
 
@@ -18,18 +16,26 @@ export interface CoinView {
 	holders: number;
 	graduated: boolean;
 	graduationPct: number;
+	/** what the coin trades against, and how much of it in the curve graduates the coin */
+	pair: PublicCoin['pair'];
+	graduatesAt: number;
+	/** the fee on every trade, in percent */
+	feePct: number;
 }
 
 /** an agent's coin in dollars, or null while it has none */
 export function coinOf(id: string): CoinView | null {
 	const c = market.coins[id];
 	if (!c || c.status !== 'live') return null;
-	const rate = market.ethUsd ?? 0;
-	const hist = c.history.length ? c.history.map((p) => p * rate) : [c.priceEth * rate];
+	const price = c.priceUsd ?? 0;
+	const hist = c.history.length ? c.history : [price];
 	return {
 		status: c.status,
-		price: c.priceEth * rate,
-		marketCap: c.marketCapEth * rate,
+		price,
+		marketCap: c.marketCapUsd ?? 0,
+		pair: c.pair,
+		graduatesAt: c.graduatesAt,
+		feePct: c.feePct,
 		hist: hist.length > 1 ? hist : [hist[0]!, hist[0]!],
 		holders: c.holders,
 		graduated: c.graduated,

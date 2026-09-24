@@ -4,7 +4,7 @@
 // against the bytecode of a deployed curve, because curves are created by the factory unverified.
 
 export const PONS_FACTORY = '0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e' as const;
-/** config 0: 1B supply, 1% curve fee, graduates at 4.2 ETH of real quote */
+/** config 0: 1B supply, 1% curve fee; graduates at 4.2 ETH, or at a token pair's own threshold (about 13.57 META) */
 export const PONS_LAUNCH_CONFIG = 0n;
 /** the zero address as pair token means the curve trades native ETH */
 export const NATIVE_PAIR = '0x0000000000000000000000000000000000000000' as const;
@@ -1332,16 +1332,45 @@ export const escrowAbi = [
 ] as const;
 
 /**
- * Graduation's second step: after a curve's reserves are swept, anyone may seed the
- * Uniswap V4 pool with them. Pons runs a keeper for it; musestream calls it too, so a coin
- * never waits. Retryable: the launch stays swept until a seed succeeds.
+ * Graduation, both steps, open to anyone: `graduate` sweeps a ready curve's reserves (the
+ * crossing buy tries this itself, but its gas estimate can leave too little for it, and the
+ * attempt fails quietly), then `createGraduatedPool` seeds the Uniswap V4 pool with them. Pons
+ * runs a keeper for both; musestream calls them too, so a coin never waits. Both retryable.
  */
 export const graduationAbi = [
+	{
+		type: 'function',
+		name: 'graduate',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'token', type: 'address' }],
+		outputs: []
+	},
 	{
 		type: 'function',
 		name: 'createGraduatedPool',
 		stateMutability: 'nonpayable',
 		inputs: [{ name: 'token', type: 'address' }],
 		outputs: [{ name: 'positionId', type: 'uint256' }]
+	}
+] as const;
+
+/** the fee escrow keeps one balance per token for a token-paired coin (META) */
+export const escrowTokenAbi = [
+	{
+		type: 'function',
+		name: 'balanceOfToken',
+		stateMutability: 'view',
+		inputs: [
+			{ name: 'recipient', type: 'address' },
+			{ name: 'token', type: 'address' }
+		],
+		outputs: [{ type: 'uint256' }]
+	},
+	{
+		type: 'function',
+		name: 'claimToken',
+		stateMutability: 'nonpayable',
+		inputs: [{ name: 'token', type: 'address' }],
+		outputs: []
 	}
 ] as const;

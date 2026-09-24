@@ -56,29 +56,34 @@ const erc20 = [
 	}
 ] as const;
 
-/** buy on a native-ETH curve: send `wei`, receive at least `minTokens` */
+/**
+ * Buy on a curve with `amount` of its pair, receiving at least `minTokens`. A native-ETH curve
+ * takes the ETH as the transaction's value; a token-paired curve pulls the token, so it must
+ * be approved first (`approveTx`).
+ */
 export function buyTx(
 	curve: Address,
-	wei: bigint,
+	amount: bigint,
 	minTokens: bigint,
-	recipient: Address
+	recipient: Address,
+	native: boolean
 ): TxRequest {
 	return {
 		to: curve,
-		value: wei,
+		value: native ? amount : undefined,
 		data: encodeFunctionData({
 			abi: curveTrade,
 			functionName: 'buy',
-			args: [wei, minTokens, recipient]
+			args: [amount, minTokens, recipient]
 		})
 	};
 }
 
-/** let the curve take `tokens` from the seller; sent before `sellTx` */
-export function approveTx(token: Address, curve: Address, tokens: bigint): TxRequest {
+/** let `spender` take `amount` of `token`: a coin before a sale, a token pair before a buy */
+export function approveTx(token: Address, spender: Address, amount: bigint): TxRequest {
 	return {
 		to: token,
-		data: encodeFunctionData({ abi: erc20, functionName: 'approve', args: [curve, tokens] })
+		data: encodeFunctionData({ abi: erc20, functionName: 'approve', args: [spender, amount] })
 	};
 }
 
