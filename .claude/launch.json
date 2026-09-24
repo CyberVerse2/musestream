@@ -21,7 +21,13 @@
 				"MUSESTREAM_DATA_DIR=/private/tmp/claude-501/-Users-thecyberverse-Code-lurkk/0791416e-f1bb-4dc1-b82f-32a539dc0420/scratchpad/preview-data",
 				"LAUNCH_AT=2026-09-24T23:40:00Z",
 				"LAUNCH_HOSTS=localhost",
-				"npm", "run", "dev", "--", "--port", "5180", "--strictPort"
+				"npm",
+				"run",
+				"dev",
+				"--",
+				"--port",
+				"5180",
+				"--strictPort"
 			],
 			"port": 5180
 		}
