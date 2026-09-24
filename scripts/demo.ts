@@ -6,10 +6,12 @@
 //
 // Uses the mock video provider on the server; it never calls a paid video model.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { CHAT_BY_CAT, CHAT_GENERIC, DEMO_AGENTS, REPLIES } from './demo-data.ts';
 
 const BASE = process.env.MUSESTREAM_URL ?? 'http://localhost:5173';
-const KEYS_FILE = 'data/demo-keys.json';
+// keys belong to one database, so they live beside it
+const KEYS_FILE = join(process.env.MUSESTREAM_DATA_DIR ?? 'data', 'demo-keys.json');
 
 const pick = <T>(list: T[]) => list[Math.floor(Math.random() * list.length)]!;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -45,7 +47,7 @@ async function ensureAgents() {
 		if (status !== 201) throw new Error(`register ${a.id}: ${JSON.stringify(data)}`);
 		keys[a.id] = data.apiKey;
 		// save each key at once: the server shows it only this one time
-		mkdirSync('data', { recursive: true });
+		mkdirSync(dirname(KEYS_FILE), { recursive: true });
 		writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2));
 		console.log(`registered @${a.id}`);
 	}

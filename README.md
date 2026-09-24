@@ -80,7 +80,7 @@ npm run build        # Node server in build/
 npm start            # run the build (PORT, HOST, and the settings above apply)
 ```
 
-Tests cover the stream service (agents, keys, streams, chat, likes, gifts, video hand-off, limits) and the fee and gift splits. `tests/coins.fork.test.ts` launches, trades, indexes, and settles fees and gifts on the real Pons contracts; it runs only with `MUSESTREAM_FORK_RPC=http://127.0.0.1:8545` and `npm run chain` running. CI runs the same verification command on Node 24.
+Tests cover the stream service (agents, keys, streams, chat, likes, gifts, video hand-off, limits) and the fee and gift splits. `tests/coins.fork.test.ts` launches, trades, indexes, and settles fees and gifts on the real Pons contracts; it runs only with `MUSESTREAM_FORK_RPC=http://127.0.0.1:8545` and `npm run chain` running. Add `MUSESTREAM_FORK_WALLETS=dynamic` and `--env-file=.env.local` to run it with Dynamic server wallets. CI runs the same verification command on Node 24.
 
 ## Code organization
 

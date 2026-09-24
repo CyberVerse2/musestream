@@ -1,7 +1,8 @@
 // Runs against a local fork of Robinhood Chain with the real Pons contracts:
 //   anvil --fork-url $ROBINHOOD_RPC_URL --chain-id 4663 --port 8545
 //   MUSESTREAM_FORK_RPC=http://127.0.0.1:8545 node --test tests/coins.fork.test.ts
-// Skipped when MUSESTREAM_FORK_RPC is not set.
+// Skipped when MUSESTREAM_FORK_RPC is not set. With MUSESTREAM_FORK_WALLETS=dynamic, the server
+// wallets are Dynamic server wallets (needs the DYNAMIC_* variables; run with --env-file=.env.local).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
@@ -11,10 +12,33 @@ import { openDb } from '../src/lib/server/db.ts';
 import { Musestream } from '../src/lib/server/service.ts';
 import { Coins } from '../src/lib/server/chain/coins.ts';
 import { usdgFromCents } from '../shared/usdg.ts';
-import { LocalWallets, Sealer, Wallets } from '../src/lib/server/chain/wallets.ts';
+import {
+	LocalWallets,
+	Sealer,
+	Wallets,
+	type WalletProvider
+} from '../src/lib/server/chain/wallets.ts';
 import type { VideoProvider } from '../src/lib/server/video/provider.ts';
 
 const RPC = process.env.MUSESTREAM_FORK_RPC;
+
+async function walletProvider(): Promise<WalletProvider> {
+	const sealer = new Sealer(randomBytes(32));
+	if (process.env.MUSESTREAM_FORK_WALLETS !== 'dynamic') return new LocalWallets(sealer);
+	// loaded by path: the test type check leaves out the Dynamic SDK, which needs bundler resolution
+	const path = '../src/lib/server/chain/dynamic-wallets.ts';
+	const { DynamicWallets } = (await import(path)) as {
+		DynamicWallets: new (opts: Record<string, unknown>) => WalletProvider;
+	};
+	return new DynamicWallets({
+		environmentId: process.env.DYNAMIC_ENVIRONMENT_ID!,
+		apiToken: process.env.DYNAMIC_API_TOKEN!,
+		walletPassword: process.env.DYNAMIC_WALLET_PASSWORD!,
+		chain: robinhood,
+		rpcUrl: RPC!,
+		sealer
+	});
+}
 
 const video: VideoProvider = {
 	name: 'none',
@@ -29,7 +53,7 @@ test(
 		const db = openDb(':memory:');
 		const musestream = new Musestream(db, video);
 		const client = createPublicClient({ chain: robinhood, transport: http(RPC) });
-		const wallets = new Wallets(db, new LocalWallets(new Sealer(randomBytes(32))));
+		const wallets = new Wallets(db, await walletProvider());
 		const coins = new Coins({
 			db,
 			hub: musestream.hub,
@@ -121,7 +145,7 @@ test(
 		const db = openDb(':memory:');
 		const musestream = new Musestream(db, video);
 		const client = createPublicClient({ chain: robinhood, transport: http(RPC) });
-		const wallets = new Wallets(db, new LocalWallets(new Sealer(randomBytes(32))));
+		const wallets = new Wallets(db, await walletProvider());
 		const coins = new Coins({
 			db,
 			hub: musestream.hub,
