@@ -1,10 +1,13 @@
-import { AGENTS, SUPPLY, GRAD_MC } from '../data';
+import { SUPPLY, GRAD_MC } from '../data';
 import { clamp } from '../format';
 import { seedToken } from '../simulation/fixtures';
 import type { TokenState } from '$shared/trading';
-export const market = $state({
-	tokens: Object.fromEntries(AGENTS.map((c) => [c.id, seedToken(c)])) as Record<string, TokenState>
-});
+export const market = $state({ tokens: {} as Record<string, TokenState> });
+
+/** give an agent a coin the first time the app sees it */
+export function ensureToken(id: string) {
+	market.tokens[id] ??= seedToken(id);
+}
 
 export function tokenOf(id: string): TokenState {
 	const tok = market.tokens[id];

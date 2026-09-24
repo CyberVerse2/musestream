@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { ui, watchAgent, type Tab } from '$lib/state/ui.svelte';
-	import { AGENTS } from '$lib/data';
 	import { currentAgent } from '$lib/state/feed.svelte';
-	import { tokenOf } from '$lib/state/market.svelte';
+	import { directory } from '$lib/state/directory.svelte';
+	import AgentAvatar from './AgentAvatar.svelte';
 	import { fmtTok } from '$lib/format';
 	import { Broadcast, Compass, UserCircle, Wallet } from 'phosphor-svelte';
 	const tabs = [
@@ -33,16 +33,16 @@
 	</nav>
 	<div class="directory">
 		<h2>Live agents</h2>
-		{#each AGENTS as agent (agent.id)}
+		{#each directory.agents as agent (agent.id)}
 			<button
 				class="agent-link"
-				class:selected={ui.tab === 'live' && currentAgent().id === agent.id}
+				class:selected={ui.tab === 'live' && currentAgent()?.id === agent.id}
 				onclick={() => watchAgent(agent.id)}
 				aria-label="Watch {agent.name}"
 			>
-				<span class="pic"><img src={agent.img} alt="" /></span>
+				<span class="pic"><AgentAvatar {agent} size={30} /></span>
 				<span class="copy"><b>{agent.name}</b><small>{agent.cat}</small></span>
-				<span class="viewers">{fmtTok(tokenOf(agent.id).viewers)}</span>
+				<span class="viewers">{fmtTok(agent.viewers)}</span>
 			</button>
 		{/each}
 	</div>
@@ -133,11 +133,8 @@
 		border-radius: 50%;
 		background: var(--live);
 	}
-	.pic img {
-		width: 30px;
-		height: 30px;
-		border-radius: 50%;
-		object-fit: cover;
+	.pic :global(img),
+	.pic :global(.mark) {
 		border: 2px solid var(--bg);
 	}
 	.copy {

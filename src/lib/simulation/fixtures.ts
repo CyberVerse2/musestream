@@ -1,22 +1,29 @@
-import type { Agent } from '../data';
 import type { TokenState } from '$shared/trading';
 import { rnd, rndAddr } from '../format';
-export function seedToken(c: Agent): TokenState {
+/**
+ * A simulated coin for an agent until real market data is connected.
+ * The starting price comes from the handle, so a coin looks the same on every reload.
+ */
+export function seedToken(id: string): TokenState {
+	let h = 2166136261;
+	for (const ch of id) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+	const unit = (h >>> 0) / 0xffffffff;
+	const price = 0.000006 + unit * 0.00008;
 	const hist: number[] = [];
-	let p = c.price * rnd(0.86, 0.96);
+	let p = price * rnd(0.86, 0.96);
 	for (let i = 0; i < 90; i++) {
 		p *= 1 + (Math.random() - 0.46) * 0.02;
 		hist.push(p);
 	}
-	const scale = c.price / hist[hist.length - 1]!;
+	const scale = price / hist[hist.length - 1]!;
 	for (let i = 0; i < hist.length; i++) hist[i]! *= scale;
 	return {
-		id: c.id,
-		price: c.price,
+		id,
+		price,
 		hist,
-		holders: c.holders,
-		viewers: c.viewers,
-		raids: Math.round(rnd(18, 86)),
+		holders: Math.round(40 + unit * 2400),
+		viewers: 0,
+		raids: 0,
 		graduated: false
 	};
 }

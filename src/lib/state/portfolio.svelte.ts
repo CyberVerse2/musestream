@@ -1,12 +1,7 @@
 import { applyBuy, applySell, type Holding } from '$shared/trading';
 import { tokenOf } from './market.svelte';
-import { pushChat } from './chat.svelte';
-import { fmtTok } from '../format';
 
-export const holdings = $state<Record<string, Holding>>({
-	kira: { amt: 4.2e6, cost: 0.0000412 },
-	nova: { amt: 1.1e6, cost: 0.0000698 }
-});
+export const holdings = $state<Record<string, Holding>>({});
 
 export interface Activity {
 	id: number;
@@ -36,7 +31,6 @@ export function buy(id: string, usd: number) {
 	holdings[id] = result.holding;
 	wallet.cash -= usd;
 	log({ kind: 'buy', agent: id, usd, tokens: result.quote.tokens });
-	pushChat(id, `bought ${fmtTok(result.quote.tokens)} ${id.toUpperCase()} 🟢`, 'chat-you', 'you');
 	return result.quote;
 }
 

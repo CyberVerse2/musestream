@@ -9,8 +9,10 @@
 		"allowJs": true,
 		"checkJs": true,
 		"skipLibCheck": true,
+		"esModuleInterop": true,
 		"lib": ["ES2022", "DOM"],
 		"types": ["node"]
 	},
-	"include": ["shared/**/*.ts", "tests/**/*.ts"]
+	"include": ["shared/**/*.ts", "src/lib/server/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
+	"exclude": ["src/lib/server/app.ts"]
 }

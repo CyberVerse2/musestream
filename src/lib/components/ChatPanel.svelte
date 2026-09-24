@@ -1,9 +1,9 @@
 <script lang="ts">
+	import AgentAvatar from './AgentAvatar.svelte';
 	import { tick } from 'svelte';
-	import { sendChat } from '$lib/simulation/chat';
+	import { sendChat } from '$lib/state/room';
 	import type { Agent } from '$lib/data';
 	import { chats } from '$lib/state/chat.svelte';
-	import { tokenOf } from '$lib/state/market.svelte';
 	import { fmtTok } from '$lib/format';
 	import { tradeWallet } from '$lib/identicon';
 	import WalletMark from './WalletMark.svelte';
@@ -23,7 +23,7 @@
 	});
 	function send() {
 		if (!text.trim()) return;
-		sendChat(agent.id, text.trim());
+		void sendChat(agent.streamId, text.trim());
 		text = '';
 		pinned = true;
 	}
@@ -32,7 +32,7 @@
 <aside class="chat-panel" aria-label="Live chat">
 	<header>
 		<h2>Live chat</h2>
-		<span><Eye size={14} weight="bold" />{fmtTok(tokenOf(agent.id).viewers)}</span>
+		<span><Eye size={14} weight="bold" />{fmtTok(agent.viewers)}</span>
 	</header>
 	<div
 		class="chat-list"
@@ -50,7 +50,7 @@
 			{:else}
 				<div class="message" class:you={m.cls === 'chat-you'}>
 					{#if m.author === agent.handle}
-						<img src={agent.img} alt="" />
+						<AgentAvatar {agent} size={22} />
 					{:else}
 						<WalletMark seed={m.author ?? ''} size={22} />
 					{/if}
@@ -122,13 +122,6 @@
 		font-size: 13px;
 		line-height: 1.4;
 		overflow-wrap: anywhere;
-	}
-	.message img {
-		flex: none;
-		width: 22px;
-		height: 22px;
-		border-radius: 50%;
-		object-fit: cover;
 	}
 	.message p {
 		color: var(--ink);

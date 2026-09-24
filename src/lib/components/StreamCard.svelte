@@ -1,10 +1,9 @@
 <script lang="ts">
 	import type { Agent } from '$lib/data';
-	import { seedChat } from '$lib/simulation/chat';
 	import { ui } from '$lib/state/ui.svelte';
-	import { like } from '$lib/state/live.svelte';
-	import { tokenOf } from '$lib/state/market.svelte';
+	import { like, watchRoom } from '$lib/state/room';
 	import { currentAgent } from '$lib/state/feed.svelte';
+	import StreamVideo from './StreamVideo.svelte';
 	import { fmtTok } from '$lib/format';
 	import HostPill from './stream/HostPill.svelte';
 	import ChatOverlay from './stream/ChatOverlay.svelte';
@@ -14,10 +13,13 @@
 
 	let { agent }: { agent: Agent } = $props();
 
-	const tok = $derived(tokenOf(agent.id));
-	const typing = $derived(ui.composing && currentAgent().id === agent.id);
+	const focused = $derived(currentAgent()?.id === agent.id);
+	const typing = $derived(ui.composing && focused);
 
-	$effect(() => seedChat(agent.id));
+	// only the stream on screen holds a live connection
+	$effect(() => {
+		if (focused && ui.tab === 'live') watchRoom(agent.id, agent.streamId);
+	});
 
 	/* double-tap the stream to like it; a single tap brings back a cleared screen */
 	let bursts = $state<{ id: number; x: number; y: number }[]>([]);
@@ -49,7 +51,7 @@
 >
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 	<div class="media" onclick={tapMedia}>
-		<img src={agent.img} alt="" />
+		<StreamVideo video={agent.video} poster={agent.img} playing={focused} />
 		<div class="shade"></div>
 		{#each bursts as b (b.id)}
 			<i class="burst" style="left:{b.x}px; top:{b.y}px" aria-hidden="true"
@@ -65,7 +67,7 @@
 		<HostPill {agent} />
 		<div class="room">
 			<span class="live-badge">LIVE</span>
-			<span class="viewers"><Eye size={14} weight="bold" />{fmtTok(tok.viewers)}</span>
+			<span class="viewers"><Eye size={14} weight="bold" />{fmtTok(agent.viewers)}</span>
 			<button
 				class="sound press"
 				onclick={() => (ui.player.muted = !ui.player.muted)}
@@ -99,11 +101,6 @@
 	.media {
 		position: absolute;
 		inset: 0;
-	}
-	.media img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
 	}
 	.shade {
 		position: absolute;

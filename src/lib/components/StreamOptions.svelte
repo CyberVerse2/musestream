@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { agentById } from '$lib/data';
+	import { agentById } from '$lib/state/directory.svelte';
 	import { ui, closeSheet, skipAgent } from '$lib/state/ui.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import Sheet from './Sheet.svelte';

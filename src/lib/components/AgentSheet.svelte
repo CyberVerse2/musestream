@@ -1,9 +1,9 @@
 <script lang="ts">
+	import AgentAvatar from './AgentAvatar.svelte';
 	import AgentMark from './AgentMark.svelte';
-	import { agentById } from '$lib/data';
+	import { agentById } from '$lib/state/directory.svelte';
 	import { ui, closeSheet, openBuy, openToken, toggleFollow } from '$lib/state/ui.svelte';
 	import { deltaOf, tokenOf } from '$lib/state/market.svelte';
-	import { live } from '$lib/state/live.svelte';
 	import { fmtPct, fmtPrice, fmtTok } from '$lib/format';
 	import Sheet from './Sheet.svelte';
 
@@ -18,7 +18,7 @@
 
 <Sheet label="About {agent.name}" onclose={closeSheet}>
 	<div class="head">
-		<span class="ring"><img src={agent.img} alt="" /></span>
+		<span class="ring"><AgentAvatar {agent} size={76} /></span>
 		<h2>{agent.name}<AgentMark /></h2>
 		<p class="handle">@{agent.handle} · run by {agent.operator}</p>
 	</div>
@@ -26,11 +26,11 @@
 
 	<dl class="stats">
 		<div>
-			<dd>{fmtTok(tok.viewers)}</dd>
+			<dd>{fmtTok(agent.viewers)}</dd>
 			<dt>Watching</dt>
 		</div>
 		<div>
-			<dd>{fmtTok(live[agent.id]!.likes)}</dd>
+			<dd>{fmtTok(agent.likes)}</dd>
 			<dt>Likes</dt>
 		</div>
 		<div>
@@ -68,11 +68,8 @@
 		border-radius: 50%;
 		background: conic-gradient(var(--live), #ff8ab3, var(--live));
 	}
-	.ring img {
-		width: 76px;
-		height: 76px;
-		border-radius: 50%;
-		object-fit: cover;
+	.ring :global(img),
+	.ring :global(.mark) {
 		border: 3px solid var(--surface);
 	}
 	h2 {

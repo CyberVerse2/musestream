@@ -1,14 +1,15 @@
 <script lang="ts">
-	import { AGENTS } from '$lib/data';
 	import { ui } from '$lib/state/ui.svelte';
 	import { viewport } from '$lib/media.svelte';
 	import { reducedMotion } from '$lib/motion';
-	import { feed, LAST, currentAgent, goTo, next, prev } from '$lib/state/feed.svelte';
+	import { feed, lastIdx, currentAgent, goTo, next, prev } from '$lib/state/feed.svelte';
+	import { directory } from '$lib/state/directory.svelte';
+	import { leaveRoom } from '$lib/state/room';
 	import StreamCard from './StreamCard.svelte';
 	import ChatPanel from './ChatPanel.svelte';
 	import CoinPanel from './CoinPanel.svelte';
 	import GiftTray from './GiftTray.svelte';
-	import { CaretUp, CaretDown, CornersIn, CornersOut } from 'phosphor-svelte';
+	import { Broadcast, CaretUp, CaretDown, CornersIn, CornersOut } from 'phosphor-svelte';
 
 	/* One stream per screen. The track follows the finger, then settles on a whole stream. */
 	let drag = $state(0);
@@ -17,8 +18,12 @@
 	const focused = $derived(currentAgent());
 	// the gift tray belongs to one stream; moving on closes it
 	$effect(() => {
-		void focused.id;
+		void focused?.id;
 		ui.giftsOpen = false;
+	});
+	// no live connection while another tab is open
+	$effect(() => {
+		if (ui.tab !== 'live') leaveRoom();
 	});
 
 	let feedEl = $state<HTMLElement | null>(null);
@@ -56,7 +61,7 @@
 			feedEl?.setPointerCapture(e.pointerId);
 		}
 		// rubber band past the first and last stream
-		const atEdge = (feed.idx === 0 && dy > 0) || (feed.idx === LAST && dy < 0);
+		const atEdge = (feed.idx === 0 && dy > 0) || (feed.idx === lastIdx() && dy < 0);
 		drag = atEdge ? dy * 0.3 : dy;
 		const now = performance.now();
 		velocity = (e.clientY - lastY) / Math.max(1, now - lastT);
@@ -141,14 +146,30 @@
 					class:settle
 					style:transform="translateY(calc({-feed.idx * 100}% + {drag}px))"
 				>
-					{#each AGENTS as agent, i (agent.id)}
+					{#each directory.agents as agent, i (agent.streamId)}
 						<div class="slot" style:top="{i * 100}%" aria-hidden={i !== feed.idx}>
 							{#if Math.abs(i - feed.idx) <= 1}<StreamCard {agent} />{/if}
 						</div>
 					{/each}
 				</div>
 			</div>
-			{#if viewport.desktop}
+			{#if !focused}
+				<div class="empty">
+					{#if !directory.loaded}
+						<p>Loading live streams…</p>
+					{:else if directory.error}
+						<p>{directory.error}</p>
+					{:else}
+						<Broadcast size={40} />
+						<h2>No agents are live right now</h2>
+						<p>Streams show up here the moment an agent goes live.</p>
+						<button class="btn-quiet" onclick={() => (ui.tab = 'profile')}
+							>Put your agent on lurkk</button
+						>
+					{/if}
+				</div>
+			{/if}
+			{#if viewport.desktop && focused}
 				<div class="stage-nav">
 					<button
 						onclick={toggleFullscreen}
@@ -160,19 +181,23 @@
 					<button onclick={prev} disabled={feed.idx === 0} aria-label="Previous stream"
 						><CaretUp size={20} /></button
 					>
-					<button onclick={next} disabled={feed.idx === LAST} aria-label="Next stream"
+					<button onclick={next} disabled={feed.idx === lastIdx()} aria-label="Next stream"
 						><CaretDown size={20} /></button
 					>
 				</div>
 			{/if}
-			{#key focused.id}<GiftTray agent={focused} />{/key}
+			{#if focused}
+				{#key focused.id}<GiftTray agent={focused} />{/key}
+			{/if}
 		</div>
 		{#if viewport.desktop}
 			<div class="rail">
-				{#key focused.id}
-					<CoinPanel agent={focused} />
-					<ChatPanel agent={focused} />
-				{/key}
+				{#if focused}
+					{#key focused.id}
+						<CoinPanel agent={focused} />
+						<ChatPanel agent={focused} />
+					{/key}
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -210,6 +235,29 @@
 		left: 0;
 		right: 0;
 		height: 100%;
+	}
+	.empty {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 10px;
+		padding: 24px;
+		text-align: center;
+		color: var(--mut);
+	}
+	.empty h2 {
+		font-size: 18px;
+		color: var(--ink);
+	}
+	.empty p {
+		font-size: 14px;
+		max-width: 280px;
+	}
+	.empty .btn-quiet {
+		margin-top: 8px;
 	}
 	.stage-nav {
 		position: absolute;

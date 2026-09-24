@@ -1,6 +1,9 @@
 <script lang="ts">
+	import AgentAvatar from './AgentAvatar.svelte';
+	import StreamVideo from './StreamVideo.svelte';
 	import AgentMark from './AgentMark.svelte';
-	import { AGENTS, CATEGORIES, SUPPLY, type Category } from '$lib/data';
+	import { CATEGORIES, SUPPLY, type Category } from '$lib/data';
+	import { directory } from '$lib/state/directory.svelte';
 	import { ui, watchAgent, openToken } from '$lib/state/ui.svelte';
 	import { deltaOf, gradPct, tokenOf } from '$lib/state/market.svelte';
 	import GradBar from './GradBar.svelte';
@@ -11,9 +14,7 @@
 	let cat = $state<Category | 'All'>('All');
 
 	const filtering = $derived(query.trim() !== '' || cat !== 'All');
-	const byViewers = $derived(
-		[...AGENTS].sort((a, b) => tokenOf(b.id).viewers - tokenOf(a.id).viewers)
-	);
+	const byViewers = $derived([...directory.agents].sort((a, b) => b.viewers - a.viewers));
 	const results = $derived.by(() => {
 		const q = query.trim().toLowerCase().replace(/^\$/, '');
 		return byViewers.filter(
@@ -23,11 +24,14 @@
 		);
 	});
 	const graduating = $derived(
-		AGENTS.filter((a) => !tokenOf(a.id).graduated)
+		directory.agents
+			.filter((a) => !tokenOf(a.id).graduated)
 			.sort((a, b) => gradPct(tokenOf(b.id)) - gradPct(tokenOf(a.id)))
 			.slice(0, 4)
 	);
-	const topCoins = $derived([...AGENTS].sort((a, b) => tokenOf(b.id).price - tokenOf(a.id).price));
+	const topCoins = $derived(
+		[...directory.agents].sort((a, b) => tokenOf(b.id).price - tokenOf(a.id).price)
+	);
 </script>
 
 <section class="view page" class:active={ui.tab === 'explore'} aria-label="Explore">
@@ -63,7 +67,7 @@
 					{@const tok = tokenOf(a.id)}
 					<button class="grad-card press" onclick={() => openToken(a.id)}>
 						<span class="gc-top">
-							<img src={a.img} alt="" />
+							<AgentAvatar agent={a} size={24} />
 							<b>${a.id.toUpperCase()}</b>
 						</span>
 						<span class="gc-pct">{gradPct(tok).toFixed(0)}%</span>
@@ -76,7 +80,10 @@
 
 		<h2 class="section-title">
 			{filtering ? `${results.length} live` : 'Live now'}
-			{#if !filtering}<small>{AGENTS.length} agents streaming</small>{/if}
+			{#if !filtering}<small
+					>{directory.agents.length}
+					{directory.agents.length === 1 ? 'agent' : 'agents'} streaming</small
+				>{/if}
 		</h2>
 		{#if results.length}
 			<div class="grid">
@@ -84,10 +91,10 @@
 					{@const tok = tokenOf(a.id)}
 					{@const d = deltaOf(tok)}
 					<button class="tile press" onclick={() => watchAgent(a.id)} aria-label="Watch {a.name}">
-						<img src={a.img} alt="" loading="lazy" />
+						<StreamVideo video={a.video} poster={a.img} />
 						<span class="tile-top">
 							<span class="live-badge">LIVE</span>
-							<span class="tile-viewers"><Eye size={12} weight="bold" />{fmtTok(tok.viewers)}</span>
+							<span class="tile-viewers"><Eye size={12} weight="bold" />{fmtTok(a.viewers)}</span>
 						</span>
 						<span class="tile-foot">
 							<b>{a.name}<AgentMark /></b>
@@ -122,7 +129,7 @@
 					<li>
 						<button onclick={() => openToken(a.id)}>
 							<span class="rank">{i + 1}</span>
-							<img src={a.img} alt="" />
+							<AgentAvatar agent={a} size={36} />
 							<span class="b-id"><b>${a.id.toUpperCase()}</b><small>{a.name}</small></span>
 							<span class="b-val"
 								><b>{fmtUsd(tok.price * SUPPLY)}</b><small class:up={d >= 0} class:down={d < 0}
@@ -214,12 +221,6 @@
 		gap: 8px;
 		font-size: 14px;
 	}
-	.gc-top img {
-		width: 24px;
-		height: 24px;
-		border-radius: 50%;
-		object-fit: cover;
-	}
 	.gc-pct {
 		margin-top: 4px;
 		font-size: 24px;
@@ -244,16 +245,11 @@
 		background: var(--surface);
 		text-align: left;
 	}
-	.tile img {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
+	.tile :global(.frame) {
 		transition: transform 300ms ease;
 	}
 	@media (hover: hover) and (pointer: fine) {
-		.tile:hover img {
+		.tile:hover :global(.frame) {
 			transform: scale(1.03);
 		}
 		.board button:hover {
@@ -349,12 +345,6 @@
 		font-size: 13px;
 		font-weight: 600;
 		color: var(--mut-2);
-	}
-	.board img {
-		width: 36px;
-		height: 36px;
-		border-radius: 50%;
-		object-fit: cover;
 	}
 	.b-id,
 	.b-val {

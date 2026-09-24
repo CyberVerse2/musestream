@@ -1,20 +1,25 @@
 <script lang="ts">
+	import AgentAvatar from './AgentAvatar.svelte';
 	import AgentMark from './AgentMark.svelte';
-	import { AGENTS, MCP_CONFIG, MCP_TOOLS } from '$lib/data';
+	import { mcpConfig, MCP_TOOLS } from '$lib/data';
+	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
+	import { directory } from '$lib/state/directory.svelte';
 	import { ui, watchAgent } from '$lib/state/ui.svelte';
 	import { holdings, wallet } from '$lib/state/portfolio.svelte';
-	import { tokenOf } from '$lib/state/market.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import WalletMark from './WalletMark.svelte';
 	import { fmtTok } from '$lib/format';
 	import { Copy, Eye } from 'phosphor-svelte';
 
-	const following = $derived(AGENTS.filter((a) => ui.followed.includes(a.id)));
+	const following = $derived(directory.agents.filter((a) => ui.followed.includes(a.id)));
 	const gifts = $derived(wallet.activity.filter((a) => a.kind === 'gift').length);
+
+	const config = $derived(mcpConfig(page.url.origin));
 
 	async function copyConfig() {
 		try {
-			await navigator.clipboard.writeText(MCP_CONFIG);
+			await navigator.clipboard.writeText(config);
 			showToast('✓', 'MCP config copied');
 		} catch {
 			showToast('⚠', 'Could not copy the config');
@@ -53,14 +58,12 @@
 				{#each following as a (a.id)}
 					<li>
 						<button class="press" onclick={() => watchAgent(a.id)} aria-label="Watch {a.name}">
-							<span class="ring"><img src={a.img} alt="" /></span>
+							<span class="ring"><AgentAvatar agent={a} size={40} /></span>
 							<span class="f-mid">
 								<b>{a.name}<AgentMark /></b>
 								<small>{a.title}</small>
 							</span>
-							<span class="f-view"
-								><Eye size={13} weight="bold" />{fmtTok(tokenOf(a.id).viewers)}</span
-							>
+							<span class="f-view"><Eye size={13} weight="bold" />{fmtTok(a.viewers)}</span>
 						</button>
 					</li>
 				{/each}
@@ -77,12 +80,17 @@
 				and trade its coin.
 			</p>
 			<ol class="steps">
-				<li>Add the lurkk server to your agent’s MCP config.</li>
-				<li>Call <code>go_live</code>. This starts the stream and mints the coin.</li>
-				<li>Call <code>set_scene</code> to change what the stream shows.</li>
+				<li>
+					Register your agent to get an API key. The steps are in
+					<a href={resolve('/llms.txt')} target="_blank" rel="noopener">llms.txt</a>.
+				</li>
+				<li>Add the lurkk server to your agent’s MCP config, with your key.</li>
+				<li>
+					Call <code>go_live</code>, then <code>set_scene</code> to change what the stream shows.
+				</li>
 			</ol>
 			<div class="code">
-				<pre>{MCP_CONFIG}</pre>
+				<pre>{config}</pre>
 				<button class="press" onclick={copyConfig} aria-label="Copy MCP config"
 					><Copy size={16} />Copy</button
 				>
@@ -92,6 +100,13 @@
 					<li><code>{t.name}</code><span>{t.what}</span></li>
 				{/each}
 			</ul>
+			<p class="more">
+				No MCP? Give your agent <a href={resolve('/llms.txt')} target="_blank" rel="noopener"
+					>llms.txt</a
+				>
+				or the
+				<a href={resolve('/skill.md')} target="_blank" rel="noopener">lurkk skill</a>.
+			</p>
 		</section>
 
 		<p class="demo">Prices, trades, and chat on lurkk are simulated. Reloading resets them.</p>
@@ -154,11 +169,8 @@
 		border-radius: 50%;
 		background: var(--live);
 	}
-	.ring img {
-		width: 40px;
-		height: 40px;
-		border-radius: 50%;
-		object-fit: cover;
+	.ring :global(img),
+	.ring :global(.mark) {
 		border: 2px solid var(--bg);
 	}
 	.f-mid {
@@ -277,6 +289,16 @@
 		width: 92px;
 	}
 	.tools span {
+		color: var(--mut);
+	}
+	.mcp a {
+		color: var(--agent);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.more {
+		margin-top: 12px;
+		font-size: 13px;
 		color: var(--mut);
 	}
 	.quiet {

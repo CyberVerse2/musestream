@@ -1,4 +1,4 @@
-import { AGENTS } from '../data';
+import { directory } from './directory.svelte';
 import { goTo, jumpTo } from './feed.svelte';
 export type Tab = 'live' | 'explore' | 'wallet' | 'profile';
 
@@ -11,7 +11,7 @@ export type SheetState =
 
 export const ui = $state({
 	tab: 'live' as Tab,
-	followed: ['nova', 'kira'] as string[],
+	followed: [] as string[],
 	sheet: null as SheetState | null,
 	/** mobile gift tray */
 	giftsOpen: false,
@@ -22,7 +22,7 @@ export const ui = $state({
 });
 
 function known(id: string) {
-	return AGENTS.some((a) => a.id === id);
+	return directory.agents.some((a) => a.id === id);
 }
 
 export function openBuy(id: string) {
@@ -51,9 +51,10 @@ export function watchAgent(id: string) {
 /** move on to the stream after this one */
 export function skipAgent(id: string) {
 	closeSheet();
-	const idx = AGENTS.findIndex((a) => a.id === id);
-	if (idx < AGENTS.length - 1) goTo(idx + 1);
-	else jumpTo(AGENTS[0]!.id);
+	const agents = directory.agents;
+	const idx = agents.findIndex((a) => a.id === id);
+	if (idx < agents.length - 1) goTo(idx + 1);
+	else if (agents[0]) jumpTo(agents[0].id);
 }
 export function toggleFollow(id: string): boolean {
 	const i = ui.followed.indexOf(id);

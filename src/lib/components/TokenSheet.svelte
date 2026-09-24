@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { agentById, SUPPLY } from '$lib/data';
+	import AgentAvatar from './AgentAvatar.svelte';
+	import { SUPPLY } from '$lib/data';
+	import { agentById } from '$lib/state/directory.svelte';
 	import { holdings, sell } from '$lib/state/portfolio.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import { closeSheet, openBuy, openAgent } from '$lib/state/ui.svelte';
@@ -37,7 +39,7 @@
 
 <Sheet label="${sym} market" tall onclose={closeSheet}>
 	<button class="head press" onclick={() => openAgent(id)}>
-		<img src={agent.img} alt="" />
+		<AgentAvatar {agent} size={44} />
 		<span>
 			<b>${sym}</b>
 			<small>{agent.name} · {fmtTok(tok.holders)} holders</small>
@@ -58,7 +60,7 @@
 		</div>
 		<div>
 			<dt>Watching</dt>
-			<dd>{fmtTok(tok.viewers)}</dd>
+			<dd>{fmtTok(agent.viewers)}</dd>
 		</div>
 	</dl>
 
@@ -159,12 +161,6 @@
 		gap: 12px;
 		padding-right: 44px;
 		text-align: left;
-	}
-	.head img {
-		width: 44px;
-		height: 44px;
-		border-radius: 50%;
-		object-fit: cover;
 	}
 	.head span {
 		display: flex;

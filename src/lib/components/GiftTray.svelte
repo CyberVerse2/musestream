@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import type { Agent } from '$lib/data';
-	import { pushChat } from '$lib/state/chat.svelte';
 	import { ui } from '$lib/state/ui.svelte';
 	import { logGift, wallet } from '$lib/state/portfolio.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
+	import { sendGift } from '$lib/state/room';
 	import { fmtCash } from '$lib/format';
 	import { viewport } from '$lib/media.svelte';
 	import { dim, slideUp } from '$lib/motion';
@@ -38,6 +38,9 @@
 			return;
 		}
 		logGift(agent.id, gift.usd);
+		sendGift(agent.streamId, gift.id).catch((err: unknown) =>
+			showToast('⚠', err instanceof Error ? err.message : 'Gift not sent')
+		);
 		combo = active?.id === gift.id ? combo + 1 : 1;
 		active = gift;
 		sequence += 1;
@@ -46,7 +49,6 @@
 			active = null;
 			combo = 0;
 		}, 3200);
-		pushChat(agent.id, `sent ${gift.name}${combo > 1 ? ` ×${combo}` : ''}`, 'chat-you', 'you');
 	}
 	onDestroy(() => clearTimeout(timer));
 </script>

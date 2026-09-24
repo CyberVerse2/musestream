@@ -3,7 +3,10 @@
 declare global {
 	namespace App {
 		// interface Error {}
-		// interface Locals {}
+		interface Locals {
+			/** anonymous viewer name, e.g. lurker-3f9a1c */
+			viewer: string;
+		}
 		// interface PageData {}
 		// interface PageState {}
 		// interface Platform {}

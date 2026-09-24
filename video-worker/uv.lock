@@ -1,0 +1,28 @@
+version = 1
+revision = 1
+requires-python = ">=3.12"
+
+[[package]]
+name = "lurkk-video-worker"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "reactor-sdk" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "reactor-sdk", specifier = ">=1.6.0" }]
+
+[[package]]
+name = "reactor-sdk"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/af/1d/21509c2b95ec7d9c639d85b3052e1e609f087b09bb5c6c84e8fa2d80571b/reactor_sdk-1.6.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:ef9fbad9c1c86c283880c55d8a2f23c4434cbbd76cced9c435dd6ce71e61c072", size = 9050094 },
+    { url = "https://files.pythonhosted.org/packages/84/a0/7792b881c0b3a4f5843a6722241ec49c369f6f2047c3c4ddee0530b084fd/reactor_sdk-1.6.0-py3-none-macosx_13_0_x86_64.whl", hash = "sha256:52b797f96730e8a139220894b532a9e1c24d3ee45bbbe752d0b3fef39708b0ab", size = 10292989 },
+    { url = "https://files.pythonhosted.org/packages/bc/39/346a7aa034065552ee3b87ff2f75b4a3ec1b289f81930ada2268ab42ad3a/reactor_sdk-1.6.0-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:e570262b2f40d627813b8b7883992dbf14dcb72c5136d63f6498710ab4da16e6", size = 10416689 },
+    { url = "https://files.pythonhosted.org/packages/a2/ca/1062467ae46770e7eaea11e0bb54490daed3a3448a64e81dee113dc9d5f5/reactor_sdk-1.6.0-py3-none-manylinux_2_34_x86_64.whl", hash = "sha256:fa1d26612df946a3802dfead4c1e778a0bcf61750ee9865cd794cd638924f290", size = 11086774 },
+    { url = "https://files.pythonhosted.org/packages/33/42/f9c3690e489c1cc254b83ad535013093d7cf85f85fafe7d580bf708edf7c/reactor_sdk-1.6.0-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:d2e2fb7efa5f1f1841c4959c40d7ac274a0f04a97405d3b9aebd777076f9ae8f", size = 10448919 },
+    { url = "https://files.pythonhosted.org/packages/5e/f3/5bf78d04d14241637f7f63530d64702fdd3255a5b732dea2c27263ca4ba4/reactor_sdk-1.6.0-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:23b3c354cee37222ac03731573a221a935b71b2127ecd2eb4adb9775e41f155f", size = 11134095 },
+    { url = "https://files.pythonhosted.org/packages/cf/15/dff5d6a79bdf69e11f92603fcee70ad83f02061d201bd18e3d41fbf2ec6c/reactor_sdk-1.6.0-py3-none-win_amd64.whl", hash = "sha256:24eff9e7ab6ca36e02eb57bccd6f5bca92ec2aff690cd82ce240deacd458be26", size = 9806554 },
+]

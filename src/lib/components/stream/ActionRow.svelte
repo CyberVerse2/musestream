@@ -1,8 +1,7 @@
 <script lang="ts">
 	import type { Agent } from '$lib/data';
 	import { ui, openOptions } from '$lib/state/ui.svelte';
-	import { like } from '$lib/state/live.svelte';
-	import { sendChat } from '$lib/simulation/chat';
+	import { like, sendChat } from '$lib/state/room';
 	import { ArrowUp, DotsThree, Gift, Heart } from 'phosphor-svelte';
 
 	let { agent, typing }: { agent: Agent; typing: boolean } = $props();
@@ -13,7 +12,7 @@
 	function send() {
 		const t = text.trim();
 		if (!t) return;
-		sendChat(agent.id, t);
+		void sendChat(agent.streamId, t);
 		text = '';
 	}
 

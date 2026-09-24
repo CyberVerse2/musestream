@@ -1,8 +1,8 @@
 <script lang="ts">
+	import AgentAvatar from '../AgentAvatar.svelte';
 	import type { Agent } from '$lib/data';
 	import AgentMark from '../AgentMark.svelte';
 	import { ui, openAgent, toggleFollow } from '$lib/state/ui.svelte';
-	import { live } from '$lib/state/live.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import { fmtTok } from '$lib/format';
 	import { Check, Plus } from 'phosphor-svelte';
@@ -18,10 +18,10 @@
 
 <div class="host">
 	<button class="open" onclick={() => openAgent(agent.id)} aria-label="About {agent.name}">
-		<span class="ring"><img src={agent.img} alt="" /></span>
+		<span class="ring"><AgentAvatar {agent} size={32} /></span>
 		<span class="who">
 			<b>{agent.name}<AgentMark /></b>
-			<small>{fmtTok(live[agent.id]!.likes)} likes</small>
+			<small>{fmtTok(agent.likes)} likes</small>
 		</span>
 	</button>
 	<button
@@ -64,11 +64,8 @@
 		border-radius: 50%;
 		background: conic-gradient(var(--live), #ff8ab3, var(--live));
 	}
-	.ring img {
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		object-fit: cover;
+	.ring :global(img),
+	.ring :global(.mark) {
 		border: 2px solid #000;
 	}
 	.who {

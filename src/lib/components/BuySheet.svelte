@@ -1,9 +1,11 @@
 <script lang="ts">
+	import AgentAvatar from './AgentAvatar.svelte';
 	import { onDestroy } from 'svelte';
 	import { closeSheet } from '$lib/state/ui.svelte';
 	import { buy, wallet } from '$lib/state/portfolio.svelte';
 	import { tokenOf } from '$lib/state/market.svelte';
-	import { agentById, SUPPLY } from '$lib/data';
+	import { SUPPLY } from '$lib/data';
+	import { agentById } from '$lib/state/directory.svelte';
 	import { quoteBuy } from '$shared/trading';
 	import { clamp, fmtCash, fmtPrice, fmtTok } from '$lib/format';
 	import Sheet from './Sheet.svelte';
@@ -34,7 +36,7 @@
 <Sheet label="Buy ${sym}" onclose={closeSheet}>
 	{#if !receipt}
 		<div class="head">
-			<img src={agent.img} alt="" />
+			<AgentAvatar {agent} size={44} />
 			<div>
 				<h2>Buy ${sym}</h2>
 				<p>{fmtPrice(tok.price)} · balance {fmtCash(wallet.cash)}</p>
@@ -91,12 +93,6 @@
 		align-items: center;
 		gap: 12px;
 		padding-right: 44px;
-	}
-	.head img {
-		width: 44px;
-		height: 44px;
-		border-radius: 50%;
-		object-fit: cover;
 	}
 	h2 {
 		font-size: 20px;

@@ -1,6 +1,7 @@
 <script lang="ts">
+	import AgentAvatar from './AgentAvatar.svelte';
 	import { onMount } from 'svelte';
-	import { agentById } from '$lib/data';
+	import { findAgent } from '$lib/state/directory.svelte';
 	import { holdings, wallet } from '$lib/state/portfolio.svelte';
 	import { ui, openToken } from '$lib/state/ui.svelte';
 	import { tokenOf } from '$lib/state/market.svelte';
@@ -15,9 +16,12 @@
 		Object.entries(holdings)
 			.map(([id, h]) => {
 				const tok = tokenOf(id);
+				const agent = findAgent(id);
 				return {
 					id,
-					agent: agentById(id),
+					// a coin stays in the wallet after its agent stops streaming
+					agent: agent ?? { img: '', handle: id, name: `@${id}` },
+					live: !!agent,
 					h,
 					value: h.amt * tok.price,
 					pnl: (tok.price / h.cost - 1) * 100,
@@ -97,10 +101,14 @@
 				{#each rows as r (r.id)}
 					<li>
 						<button class="row press" onclick={() => openToken(r.id)}>
-							<span class="ava"><img src={r.agent.img} alt="" /><i class="dot"></i></span>
+							<span class="ava"
+								><AgentAvatar agent={r.agent} size={40} />{#if r.live}<i class="dot"></i>{/if}</span
+							>
 							<span class="mid">
 								<b>${r.id.toUpperCase()}</b>
-								<small>{fmtTok(r.h.amt)} · {r.agent.name} is live</small>
+								<small
+									>{fmtTok(r.h.amt)} · {r.agent.name}{r.live ? ' is live' : ' is offline'}</small
+								>
 							</span>
 							<canvas
 								class="spark"
@@ -129,7 +137,7 @@
 		{#if wallet.activity.length}
 			<ul class="list">
 				{#each wallet.activity as a (a.id)}
-					{@const agent = agentById(a.agent)}
+					{@const agent = findAgent(a.agent) ?? { name: `@${a.agent}` }}
 					<li class="row act">
 						<span class="ico {a.kind}">
 							{#if a.kind === 'buy'}<ArrowDownLeft size={18} weight="bold" />
@@ -254,12 +262,6 @@
 	.ava {
 		position: relative;
 		flex: none;
-	}
-	.ava img {
-		width: 40px;
-		height: 40px;
-		border-radius: 50%;
-		object-fit: cover;
 	}
 	.dot {
 		position: absolute;

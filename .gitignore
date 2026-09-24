@@ -1,7 +1,11 @@
 node_modules/
 .svelte-kit/
 build/
+data/
 coverage/
 .env
 .env.*
 .DS_Store
+!.env.example
+video-worker/.venv/
+__pycache__/

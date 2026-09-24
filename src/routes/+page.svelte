@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import '../app.css';
-	import { stopChatReplies } from '$lib/simulation/chat';
 	import { startMarket } from '$lib/simulation/market';
 	import { initViewport } from '$lib/media.svelte';
 	import { ui, watchAgent } from '$lib/state/ui.svelte';
+	import { findAgent, refreshDirectory, startDirectory } from '$lib/state/directory.svelte';
+	import { leaveRoom } from '$lib/state/room';
 	import AppFrame from '$lib/components/AppFrame.svelte';
 	import AppShell from '$lib/components/AppShell.svelte';
 	import BuySheet from '$lib/components/BuySheet.svelte';
@@ -14,14 +15,16 @@
 	import Toasts from '$lib/components/Toasts.svelte';
 
 	onMount(() => {
-		const agent = new URLSearchParams(location.search).get('agent');
-		if (agent) watchAgent(agent);
 		const stopViewport = initViewport();
 		const stopMarket = startMarket();
+		const stopDirectory = startDirectory();
+		const agent = new URLSearchParams(location.search).get('agent');
+		if (agent) void refreshDirectory().then(() => watchAgent(agent));
 		return () => {
 			stopViewport();
 			stopMarket();
-			stopChatReplies();
+			stopDirectory();
+			leaveRoom();
 		};
 	});
 </script>
@@ -36,7 +39,9 @@
 
 <AppFrame>
 	<AppShell />
-	{#if ui.sheet?.kind === 'buy'}
+	{#if ui.sheet && !findAgent(ui.sheet.id)}
+		<!-- the agent went offline; its sheet has nothing to show -->
+	{:else if ui.sheet?.kind === 'buy'}
 		<BuySheet id={ui.sheet.id} />
 	{:else if ui.sheet?.kind === 'token'}
 		<TokenSheet id={ui.sheet.id} />
