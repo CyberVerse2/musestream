@@ -3,7 +3,7 @@
 import { api, type Quote, type WalletInfo } from '../api';
 import { showToast } from './notifications.svelte';
 import { setCoin } from './market.svelte';
-import { account, ownWallet } from './account.svelte';
+import { account, configLoaded, ownWallet } from './account.svelte';
 import { transferTx } from '$shared/tx';
 import { USDG, usdgFromCents, usdgToUsd } from '$shared/usdg';
 import { formatEther } from 'viem';
@@ -16,8 +16,12 @@ export const wallet = $state({
 
 let inflight: Promise<void> | null = null;
 export function refreshWallet(): Promise<void> {
-	inflight ??= api
-		.wallet()
+	inflight ??= configLoaded
+		.then(() => {
+			// with real money, a viewer has a wallet only after signing in
+			if (account.config && !account.config.testMoney && !account.signedInAs) return null;
+			return api.wallet();
+		})
 		.then((info) => {
 			wallet.info = info;
 			wallet.error = null;

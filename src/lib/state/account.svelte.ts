@@ -8,9 +8,13 @@ export const account = $state({
 	signedInAs: null as string | null
 });
 
+let markConfigLoaded!: () => void;
+/** resolves once the app's config has loaded (or failed to), so callers know the money mode */
+export const configLoaded = new Promise<void>((resolve) => (markConfigLoaded = resolve));
+
 export async function loadAccount() {
 	try {
-		const config = await api.config();
+		const config = await api.config().finally(markConfigLoaded);
 		account.config = config;
 		account.signedInAs = config.signedInAs;
 		if (!config.dynamicEnvironmentId) return;

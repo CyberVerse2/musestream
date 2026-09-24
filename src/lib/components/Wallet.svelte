@@ -98,6 +98,13 @@
 
 		{#if !wallet.loaded}
 			<p class="quiet">Loading your wallet…</p>
+		{:else if !info && canSignIn()}
+			<div class="signin">
+				<p>
+					Sign in to get your wallet. It holds your USDG and your coins, and only you control it.
+				</p>
+				<button class="btn-lime" onclick={openSignIn}>Sign in</button>
+			</div>
 		{:else if !info}
 			<div class="empty">
 				<p>{wallet.error ?? 'Your wallet is not available.'}</p>
