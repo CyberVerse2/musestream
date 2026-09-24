@@ -1,6 +1,7 @@
 import { lurkk } from '$lib/server/app';
 import { handle } from '$lib/server/http';
 import { toPublicAgent, toPublicChat } from '$lib/server/views';
+import { publicCoin } from '$lib/server/market';
 
 /**
  * Server-sent events for one stream: a snapshot first, then chat, video, likes,
@@ -29,7 +30,8 @@ export const GET = ({ params, request }) =>
 					chat: snap.chat.map(toPublicChat),
 					likes: snap.likes,
 					viewers: snap.viewers + 1,
-					video: snap.video
+					video: snap.video,
+					coin: publicCoin(snap.agent.id)
 				});
 				if (snap.stream.ended_at) {
 					controller.close();

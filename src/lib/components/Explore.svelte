@@ -2,10 +2,10 @@
 	import AgentAvatar from './AgentAvatar.svelte';
 	import StreamVideo from './StreamVideo.svelte';
 	import AgentMark from './AgentMark.svelte';
-	import { CATEGORIES, SUPPLY, type Category } from '$lib/data';
+	import { CATEGORIES, type Category } from '$lib/data';
 	import { directory } from '$lib/state/directory.svelte';
 	import { ui, watchAgent, openToken } from '$lib/state/ui.svelte';
-	import { deltaOf, gradPct, tokenOf } from '$lib/state/market.svelte';
+	import { coinOf, deltaOf, type CoinView } from '$lib/state/market.svelte';
 	import GradBar from './GradBar.svelte';
 	import { fmtPct, fmtTok, fmtUsd } from '$lib/format';
 	import { Eye, MagnifyingGlass, X } from 'phosphor-svelte';
@@ -25,12 +25,14 @@
 	});
 	const graduating = $derived(
 		directory.agents
-			.filter((a) => !tokenOf(a.id).graduated)
-			.sort((a, b) => gradPct(tokenOf(b.id)) - gradPct(tokenOf(a.id)))
+			.filter((a) => coinOf(a.id) && !coinOf(a.id)!.graduated)
+			.sort((a, b) => coinOf(b.id)!.graduationPct - coinOf(a.id)!.graduationPct)
 			.slice(0, 4)
 	);
 	const topCoins = $derived(
-		[...directory.agents].sort((a, b) => tokenOf(b.id).price - tokenOf(a.id).price)
+		directory.agents
+			.filter((a) => coinOf(a.id))
+			.sort((a, b) => coinOf(b.id)!.marketCap - coinOf(a.id)!.marketCap)
 	);
 </script>
 
@@ -61,18 +63,18 @@
 		</div>
 
 		{#if !filtering}
-			<h2 class="section-title">Close to graduating <small>at $100K market cap</small></h2>
+			<h2 class="section-title">Close to graduating <small>at 4.2 ETH in the curve</small></h2>
 			<div class="rail">
 				{#each graduating as a (a.id)}
-					{@const tok = tokenOf(a.id)}
+					{@const tok = coinOf(a.id) as CoinView}
 					<button class="grad-card press" onclick={() => openToken(a.id)}>
 						<span class="gc-top">
 							<AgentAvatar agent={a} size={24} />
 							<b>${a.id.toUpperCase()}</b>
 						</span>
-						<span class="gc-pct">{gradPct(tok).toFixed(0)}%</span>
-						<GradBar pct={gradPct(tok)} />
-						<small>{fmtUsd(tok.price * SUPPLY)} market cap</small>
+						<span class="gc-pct">{tok.graduationPct.toFixed(0)}%</span>
+						<GradBar pct={tok.graduationPct} />
+						<small>{fmtUsd(tok.marketCap)} market cap</small>
 					</button>
 				{/each}
 			</div>
@@ -88,8 +90,8 @@
 		{#if results.length}
 			<div class="grid">
 				{#each results as a (a.id)}
-					{@const tok = tokenOf(a.id)}
-					{@const d = deltaOf(tok)}
+					{@const tok = coinOf(a.id)}
+					{@const d = tok ? deltaOf(tok) : 0}
 					<button class="tile press" onclick={() => watchAgent(a.id)} aria-label="Watch {a.name}">
 						<StreamVideo video={a.video} poster={a.img} />
 						<span class="tile-top">
@@ -101,7 +103,7 @@
 							<span class="tile-title">{a.title}</span>
 							<span class="tile-coin"
 								>${a.id.toUpperCase()}
-								<span class:up={d >= 0} class:down={d < 0}>{fmtPct(d)}</span></span
+								{#if tok}<span class:up={d >= 0} class:down={d < 0}>{fmtPct(d)}</span>{/if}</span
 							>
 						</span>
 					</button>
@@ -124,7 +126,7 @@
 			<h2 class="section-title">Top coins <small>by market cap</small></h2>
 			<ol class="board">
 				{#each topCoins as a, i (a.id)}
-					{@const tok = tokenOf(a.id)}
+					{@const tok = coinOf(a.id) as CoinView}
 					{@const d = deltaOf(tok)}
 					<li>
 						<button onclick={() => openToken(a.id)}>
@@ -132,7 +134,7 @@
 							<AgentAvatar agent={a} size={36} />
 							<span class="b-id"><b>${a.id.toUpperCase()}</b><small>{a.name}</small></span>
 							<span class="b-val"
-								><b>{fmtUsd(tok.price * SUPPLY)}</b><small class:up={d >= 0} class:down={d < 0}
+								><b>{fmtUsd(tok.marketCap)}</b><small class:up={d >= 0} class:down={d < 0}
 									>{fmtPct(d)}</small
 								></span
 							>

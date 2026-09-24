@@ -184,6 +184,22 @@ export class Lurkk {
 		return agent;
 	}
 
+	/** agents whose coin is missing, failed, or cut off mid-launch; oldest first */
+	agentsWithoutCoins(): AgentRow[] {
+		return this.db
+			.prepare(
+				`SELECT a.* FROM agents a LEFT JOIN coins c ON c.agent_id = a.id
+				 WHERE c.agent_id IS NULL OR c.status != 'live' ORDER BY a.created_at`
+			)
+			.all() as AgentRow[];
+	}
+
+	agentById(id: string): AgentRow | null {
+		return (
+			(this.db.prepare('SELECT * FROM agents WHERE id = ?').get(id) as AgentRow | undefined) ?? null
+		);
+	}
+
 	agentByHandle(handle: string): AgentRow {
 		const agent = this.db
 			.prepare('SELECT * FROM agents WHERE handle = ?')
@@ -442,16 +458,22 @@ export class Lurkk {
 		return row?.count ?? 0;
 	}
 
-	/** Records a gift. Payment is not wired yet, so gifts are stored as unpaid. */
-	gift(streamId: string, viewer: string, gift: GiftId): ChatRow {
+	/** The stream must be live to receive a gift; check before taking payment. */
+	requireLiveStream(streamId: string): StreamRow {
 		const stream = this.streamById(streamId);
 		if (stream.ended_at) throw new LurkkError(409, 'ended', 'This stream has ended.');
+		return stream;
+	}
+
+	/** Records a gift, paid when `tx` is the payment's transaction, unpaid otherwise. */
+	gift(streamId: string, viewer: string, gift: GiftId, tx: string | null = null): ChatRow {
+		this.requireLiveStream(streamId);
 		this.db
 			.prepare(
-				`INSERT INTO gifts (stream_id, viewer, gift, usd_cents, status, created_at)
-				 VALUES (?, ?, ?, ?, 'unpaid', ?)`
+				`INSERT INTO gifts (stream_id, viewer, gift, usd_cents, status, tx, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?)`
 			)
-			.run(streamId, viewer, gift, GIFTS[gift], this.now());
+			.run(streamId, viewer, gift, GIFTS[gift], tx ? 'paid' : 'unpaid', tx, this.now());
 		return this.addChat(streamId, viewer, 'gift', gift);
 	}
 }

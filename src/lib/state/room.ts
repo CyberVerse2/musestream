@@ -1,5 +1,6 @@
 // The live connection for the stream on screen: chat, likes, viewers, video.
-import { api, viewerName, type PublicChat, type VideoSource } from '../api';
+import { api, viewerName, type PublicChat, type PublicCoin, type VideoSource } from '../api';
+import { setCoin } from './market.svelte';
 import { pushChat } from './chat.svelte';
 import { findAgent, refreshDirectory } from './directory.svelte';
 import { showToast } from './notifications.svelte';
@@ -30,18 +31,23 @@ export function watchRoom(agentId: string, streamId: string) {
 	const on = <T>(type: string, fn: (data: T) => void) =>
 		es.addEventListener(type, (e) => fn(JSON.parse((e as MessageEvent).data)));
 
-	on<{ chat: PublicChat[]; likes: number; viewers: number; video: VideoSource | null }>(
-		'snapshot',
-		(snap) => {
-			const agent = findAgent(agentId);
-			for (const m of snap.chat) addMessage(agentId, m);
-			if (!agent) return;
-			agent.likes = Math.max(agent.likes, snap.likes);
-			agent.viewers = snap.viewers;
-			if (snap.video) agent.video = snap.video;
-		}
-	);
+	on<{
+		chat: PublicChat[];
+		likes: number;
+		viewers: number;
+		video: VideoSource | null;
+		coin: PublicCoin | null;
+	}>('snapshot', (snap) => {
+		const agent = findAgent(agentId);
+		for (const m of snap.chat) addMessage(agentId, m);
+		if (snap.coin) setCoin(agentId, snap.coin);
+		if (!agent) return;
+		agent.likes = Math.max(agent.likes, snap.likes);
+		agent.viewers = snap.viewers;
+		if (snap.video) agent.video = snap.video;
+	});
 	on<PublicChat>('chat', (m) => addMessage(agentId, m));
+	on<{ coin: PublicCoin }>('coin', ({ coin }) => setCoin(agentId, coin));
 	on<{ likes: number }>('likes', ({ likes }) => {
 		const agent = findAgent(agentId);
 		if (agent) agent.likes = Math.max(agent.likes, likes);

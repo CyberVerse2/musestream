@@ -6,14 +6,17 @@
 	import { resolve } from '$app/paths';
 	import { directory } from '$lib/state/directory.svelte';
 	import { ui, watchAgent } from '$lib/state/ui.svelte';
-	import { holdings, wallet } from '$lib/state/portfolio.svelte';
+	import { refreshWallet, wallet } from '$lib/state/portfolio.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import WalletMark from './WalletMark.svelte';
 	import { fmtTok } from '$lib/format';
 	import { Copy, Eye } from 'phosphor-svelte';
 
 	const following = $derived(directory.agents.filter((a) => ui.followed.includes(a.id)));
-	const gifts = $derived(wallet.activity.filter((a) => a.kind === 'gift').length);
+	const address = $derived(wallet.info?.address ?? '');
+	$effect(() => {
+		if (ui.tab === 'profile' && !wallet.loaded) void refreshWallet();
+	});
 
 	const config = $derived(mcpConfig(page.url.origin));
 
@@ -30,10 +33,10 @@
 <section class="view page" class:active={ui.tab === 'profile'} aria-label="Profile">
 	<div class="page-inner">
 		<header class="me">
-			<WalletMark seed={wallet.address} size={64} />
+			<WalletMark seed={address || 'you'} size={64} />
 			<div>
 				<h1 class="page-title">you</h1>
-				<p class="addr">{wallet.address.slice(0, 4)}…{wallet.address.slice(-4)}</p>
+				{#if address}<p class="addr">{address.slice(0, 6)}…{address.slice(-4)}</p>{/if}
 			</div>
 		</header>
 
@@ -43,12 +46,12 @@
 				<dt>Following</dt>
 			</div>
 			<div>
-				<dd>{Object.keys(holdings).length}</dd>
+				<dd>{wallet.info?.holdings.length ?? 0}</dd>
 				<dt>Coins</dt>
 			</div>
 			<div>
-				<dd>{gifts}</dd>
-				<dt>Gifts sent</dt>
+				<dd>{wallet.info?.activity.length ?? 0}</dd>
+				<dt>Trades</dt>
 			</div>
 		</dl>
 

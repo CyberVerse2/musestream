@@ -14,5 +14,5 @@
 		"types": ["node"]
 	},
 	"include": ["shared/**/*.ts", "src/lib/server/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
-	"exclude": ["src/lib/server/app.ts"]
+	"exclude": ["src/lib/server/app.ts", "src/lib/server/market.ts", "src/lib/server/viewer.ts"]
 }

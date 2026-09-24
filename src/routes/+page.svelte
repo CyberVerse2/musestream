@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import '../app.css';
-	import { startMarket } from '$lib/simulation/market';
 	import { initViewport } from '$lib/media.svelte';
 	import { ui, watchAgent } from '$lib/state/ui.svelte';
 	import { findAgent, refreshDirectory, startDirectory } from '$lib/state/directory.svelte';
@@ -16,13 +15,11 @@
 
 	onMount(() => {
 		const stopViewport = initViewport();
-		const stopMarket = startMarket();
 		const stopDirectory = startDirectory();
 		const agent = new URLSearchParams(location.search).get('agent');
 		if (agent) void refreshDirectory().then(() => watchAgent(agent));
 		return () => {
 			stopViewport();
-			stopMarket();
 			stopDirectory();
 			leaveRoom();
 		};

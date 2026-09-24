@@ -1,41 +1,50 @@
 <script lang="ts">
-	import { SUPPLY } from '$lib/data';
 	import { openBuy, openToken } from '$lib/state/ui.svelte';
-	import { deltaOf, gradPct, tokenOf } from '$lib/state/market.svelte';
+	import { coinOf, deltaOf, market } from '$lib/state/market.svelte';
 	import { fmtPrice, fmtUsd } from '$lib/format';
 	import { sparkline, trendColor } from '$lib/sparkline';
 	import GradBar from '../GradBar.svelte';
 
 	let { id }: { id: string } = $props();
-	const tok = $derived(tokenOf(id));
-	const delta = $derived(deltaOf(tok));
+	const tok = $derived(coinOf(id));
+	const delta = $derived(tok ? deltaOf(tok) : 0);
+	const status = $derived(market.coins[id]?.status);
 	const sym = $derived(id.toUpperCase());
 </script>
 
-<div class="coin">
-	<button class="open press" onclick={() => openToken(id)} aria-label="${sym} market">
-		<span class="id">
+{#if !tok}
+	<div class="coin">
+		<p class="open pending">
 			<b>${sym}</b>
-			<span class="px">
-				{fmtPrice(tok.price)}
-				<span class:up={delta >= 0} class:down={delta < 0}
-					>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}%</span
-				>
+			<span>{status === 'failed' ? 'Coin launch failed' : 'Coin launching…'}</span>
+		</p>
+	</div>
+{:else}
+	<div class="coin">
+		<button class="open press" onclick={() => openToken(id)} aria-label="${sym} market">
+			<span class="id">
+				<b>${sym}</b>
+				<span class="px">
+					{fmtPrice(tok.price)}
+					<span class:up={delta >= 0} class:down={delta < 0}
+						>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}%</span
+					>
+				</span>
 			</span>
-		</span>
-		<canvas
-			class="spark"
-			use:sparkline={{ data: tok.hist.slice(-40), color: trendColor(delta), fill: false }}
-		></canvas>
-		<span class="mc"><small>mcap</small>{fmtUsd(tok.price * SUPPLY)}</span>
-		{#if !tok.graduated}
-			<span class="grad"
-				><GradBar pct={gradPct(tok)} height={2} track="rgba(255,255,255,0.1)" /></span
-			>
-		{/if}
-	</button>
-	<button class="buy press" onclick={() => openBuy(id)}>Buy</button>
-</div>
+			<canvas
+				class="spark"
+				use:sparkline={{ data: tok.hist.slice(-40), color: trendColor(delta), fill: false }}
+			></canvas>
+			<span class="mc"><small>mcap</small>{fmtUsd(tok.marketCap)}</span>
+			{#if !tok.graduated}
+				<span class="grad"
+					><GradBar pct={tok.graduationPct} height={2} track="rgba(255,255,255,0.1)" /></span
+				>
+			{/if}
+		</button>
+		<button class="buy press" onclick={() => openBuy(id)}>Buy</button>
+	</div>
+{/if}
 
 <style>
 	.coin {
@@ -105,6 +114,15 @@
 	}
 	.grad :global(.bar) {
 		border-radius: 0;
+	}
+	.pending {
+		justify-content: space-between;
+		font-size: 13px;
+		color: var(--mut);
+	}
+	.pending b {
+		font-size: 15px;
+		color: var(--ink);
 	}
 	.buy {
 		flex: none;

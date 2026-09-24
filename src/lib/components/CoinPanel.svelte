@@ -1,46 +1,52 @@
 <script lang="ts">
-	import { SUPPLY, type Agent } from '$lib/data';
-	import { deltaOf, gradPct, tokenOf } from '$lib/state/market.svelte';
-	import { holdings } from '$lib/state/portfolio.svelte';
+	import type { Agent } from '$lib/data';
+	import { coinOf, deltaOf } from '$lib/state/market.svelte';
+	import { holdingOf } from '$lib/state/portfolio.svelte';
 	import { openBuy, openToken } from '$lib/state/ui.svelte';
 	import { fmtPct, fmtPrice, fmtTok, fmtUsd } from '$lib/format';
 	import { sparkline, trendColor } from '$lib/sparkline';
 
 	let { agent }: { agent: Agent } = $props();
-	const tok = $derived(tokenOf(agent.id));
-	const delta = $derived(deltaOf(tok));
-	const held = $derived(holdings[agent.id]);
+	const tok = $derived(coinOf(agent.id));
+	const delta = $derived(tok ? deltaOf(tok) : 0);
+	const held = $derived(holdingOf(agent.id));
 	const sym = $derived(agent.id.toUpperCase());
 </script>
 
-<section class="coin-panel" aria-label="${sym}">
-	<button class="head press" onclick={() => openToken(agent.id)}>
-		<span>
-			<b>${sym}</b>
-			<small>{fmtTok(tok.holders)} holders</small>
-		</span>
-		<span class="px">
-			{fmtPrice(tok.price)}
-			<small class:up={delta >= 0} class:down={delta < 0}>{fmtPct(delta)}</small>
-		</span>
-	</button>
-	<canvas use:sparkline={{ data: tok.hist.slice(-80), color: trendColor(delta) }}></canvas>
-	<dl>
-		<div>
-			<dt>Market cap</dt>
-			<dd>{fmtUsd(tok.price * SUPPLY)}</dd>
-		</div>
-		<div>
-			<dt>{tok.graduated ? 'Status' : 'To graduation'}</dt>
-			<dd>{tok.graduated ? 'Open market' : `${gradPct(tok).toFixed(0)}%`}</dd>
-		</div>
-		<div>
-			<dt>You hold</dt>
-			<dd>{held ? fmtUsd(held.amt * tok.price) : '—'}</dd>
-		</div>
-	</dl>
-	<button class="btn-lime" onclick={() => openBuy(agent.id)}>Buy ${sym}</button>
-</section>
+{#if !tok}
+	<section class="coin-panel" aria-label="${sym}">
+		<p class="waiting"><b>${sym}</b> The coin is launching.</p>
+	</section>
+{:else}
+	<section class="coin-panel" aria-label="${sym}">
+		<button class="head press" onclick={() => openToken(agent.id)}>
+			<span>
+				<b>${sym}</b>
+				<small>{fmtTok(tok.holders)} holders</small>
+			</span>
+			<span class="px">
+				{fmtPrice(tok.price)}
+				<small class:up={delta >= 0} class:down={delta < 0}>{fmtPct(delta)}</small>
+			</span>
+		</button>
+		<canvas use:sparkline={{ data: tok.hist.slice(-80), color: trendColor(delta) }}></canvas>
+		<dl>
+			<div>
+				<dt>Market cap</dt>
+				<dd>{fmtUsd(tok.marketCap)}</dd>
+			</div>
+			<div>
+				<dt>{tok.graduated ? 'Status' : 'To graduation'}</dt>
+				<dd>{tok.graduated ? 'Open market' : `${tok.graduationPct.toFixed(0)}%`}</dd>
+			</div>
+			<div>
+				<dt>You hold</dt>
+				<dd>{held ? fmtUsd(held.tokens * tok.price) : '—'}</dd>
+			</div>
+		</dl>
+		<button class="btn-lime" onclick={() => openBuy(agent.id)}>Buy ${sym}</button>
+	</section>
+{/if}
 
 <style>
 	.coin-panel {
@@ -51,6 +57,14 @@
 		padding: 16px;
 		border-radius: var(--r-lg);
 		background: var(--surface);
+	}
+	.waiting {
+		font-size: 14px;
+		color: var(--mut);
+	}
+	.waiting b {
+		color: var(--ink);
+		margin-right: 6px;
 	}
 	.head {
 		display: flex;

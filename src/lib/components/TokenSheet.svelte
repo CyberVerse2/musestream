@@ -1,12 +1,11 @@
 <script lang="ts">
 	import AgentAvatar from './AgentAvatar.svelte';
-	import { SUPPLY } from '$lib/data';
+	import { api, type CoinDetail } from '$lib/api';
 	import { agentById } from '$lib/state/directory.svelte';
-	import { holdings, sell } from '$lib/state/portfolio.svelte';
+	import { holdingOf, refreshWallet, sell, wallet } from '$lib/state/portfolio.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import { closeSheet, openBuy, openAgent } from '$lib/state/ui.svelte';
-	import { deltaOf, gradPct, tokenOf } from '$lib/state/market.svelte';
-	import { sampleHolders, sampleTrades } from '$lib/simulation/fixtures';
+	import { coinOf, deltaOf, market } from '$lib/state/market.svelte';
 	import { fmtPct, fmtPrice, fmtTok, fmtUsd } from '$lib/format';
 	import { sparkline, trendColor } from '$lib/sparkline';
 	import Sheet from './Sheet.svelte';
@@ -16,23 +15,57 @@
 	let { id }: { id: string } = $props();
 
 	const sym = $derived(id.toUpperCase());
-	const tok = $derived(tokenOf(id));
+	const tok = $derived(coinOf(id));
 	const agent = $derived(agentById(id));
-	const delta = $derived(deltaOf(tok));
-	const held = $derived(holdings[id]);
-	const heldPnl = $derived(held ? (tok.price / held.cost - 1) * 100 : 0);
+	const delta = $derived(tok ? deltaOf(tok) : 0);
+	const held = $derived(holdingOf(id));
+	/** ETH spent on this coin minus ETH taken out, from the viewer's own trades */
+	const netCostUsd = $derived.by(() => {
+		const rate = market.ethUsd ?? 0;
+		let eth = 0;
+		for (const a of wallet.info?.activity ?? []) {
+			if (a.handle === id) eth += a.side === 'buy' ? a.eth : -a.eth;
+		}
+		return eth * rate;
+	});
+	const heldValue = $derived(held && tok ? held.tokens * tok.price : 0);
+	const heldPnl = $derived(netCostUsd > 0 ? ((heldValue - netCostUsd) / netCostUsd) * 100 : 0);
 
 	let tab = $state<'trades' | 'holders'>('trades');
 	let selling = $state(false);
-	let frac = $state(0.25);
+	let busy = $state(false);
+	let frac = $state<0.25 | 0.5 | 1>(0.25);
+	let detail = $state<CoinDetail | null>(null);
 
-	const trades = sampleTrades(8);
-	const holders = sampleHolders(5);
+	if (!wallet.loaded) void refreshWallet();
 
-	function doSell() {
-		const receipt = sell(id, frac);
-		if (!receipt) return;
-		showToast('✓', `Sold ${fmtTok(receipt.tokens)} ${sym} for ${fmtUsd(receipt.usd)}`);
+	// reload trades and holders whenever the coin trades
+	$effect(() => {
+		void market.coins[id]?.history.length;
+		void api
+			.coin(id)
+			.then((d) => (detail = d))
+			.catch(() => {});
+	});
+
+	const me = $derived(wallet.info?.address.toLowerCase());
+	const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+	function ago(at: number) {
+		const s = Math.max(1, Math.round((Date.now() - at) / 1000));
+		if (s < 60) return `${s}s`;
+		if (s < 3600) return `${Math.round(s / 60)}m`;
+		return `${Math.round(s / 3600)}h`;
+	}
+
+	async function doSell() {
+		busy = true;
+		const res = await sell(id, frac);
+		busy = false;
+		if (!res) return;
+		showToast(
+			'✓',
+			`Sold ${fmtTok(Number(res.tokens))} ${sym} for ${Number(res.eth).toFixed(5)} ETH`
+		);
 		selling = false;
 	}
 </script>
@@ -42,71 +75,81 @@
 		<AgentAvatar {agent} size={44} />
 		<span>
 			<b>${sym}</b>
-			<small>{agent.name} · {fmtTok(tok.holders)} holders</small>
+			<small>{agent.name}{tok ? ` · ${fmtTok(tok.holders)} holders` : ''}</small>
 		</span>
 	</button>
 
-	<div class="price">
-		<span class="big">{fmtPrice(tok.price)}</span>
-		<span class:up={delta >= 0} class:down={delta < 0}>{fmtPct(delta)} · 1m</span>
-	</div>
-	<canvas class="chart" use:sparkline={{ data: tok.hist.slice(-80), color: trendColor(delta) }}
-	></canvas>
-
-	<dl class="facts">
-		<div>
-			<dt>Market cap</dt>
-			<dd>{fmtUsd(tok.price * SUPPLY)}</dd>
-		</div>
-		<div>
-			<dt>Watching</dt>
-			<dd>{fmtTok(agent.viewers)}</dd>
-		</div>
-	</dl>
-
-	{#if tok.graduated}
-		<p class="grad done">Graduated. ${sym} trades on the open market.</p>
+	{#if !tok}
+		<p class="grad">${sym} is still launching.</p>
 	{:else}
-		<div class="grad">
-			<div class="grad-row"><span>Graduation</span><b>{gradPct(tok).toFixed(0)}%</b></div>
-			<span class="bar"><GradBar pct={gradPct(tok)} height={6} /></span>
-			<p>At $100K market cap, the coin leaves the bonding curve and trades on the open market.</p>
+		<div class="price">
+			<span class="big">{fmtPrice(tok.price)}</span>
+			<span class:up={delta >= 0} class:down={delta < 0}>{fmtPct(delta)}</span>
 		</div>
-	{/if}
+		<canvas class="chart" use:sparkline={{ data: tok.hist.slice(-80), color: trendColor(delta) }}
+		></canvas>
 
-	{#if held}
-		<div class="position">
-			<span>Your position</span>
-			<b>{fmtUsd(held.amt * tok.price)}</b>
-			<small
-				>{fmtTok(held.amt)}
-				{sym} ·
-				<span class:up={heldPnl >= 0} class:down={heldPnl < 0}>{fmtPct(heldPnl)}</span></small
-			>
-		</div>
-	{/if}
-
-	{#if selling && held}
-		<div class="sell">
-			<div class="fracs" role="group" aria-label="Amount to sell">
-				{#each [0.25, 0.5, 1] as f (f)}
-					<button class="chip" aria-pressed={frac === f} onclick={() => (frac = f)}
-						>{f * 100}%</button
-					>
-				{/each}
+		<dl class="facts">
+			<div>
+				<dt>Market cap</dt>
+				<dd>{fmtUsd(tok.marketCap)}</dd>
 			</div>
-			<div class="actions">
-				<button class="btn-quiet" onclick={() => (selling = false)}>Cancel</button>
-				<button class="btn-quiet sell-go" onclick={doSell}
-					>Sell {fmtUsd(held.amt * frac * tok.price)}</button
+			<div>
+				<dt>Watching</dt>
+				<dd>{fmtTok(agent.viewers)}</dd>
+			</div>
+		</dl>
+
+		{#if tok.graduated}
+			<p class="grad done">Graduated. ${sym} trades on Uniswap now.</p>
+		{:else}
+			<div class="grad">
+				<div class="grad-row"><span>Graduation</span><b>{tok.graduationPct.toFixed(0)}%</b></div>
+				<span class="bar"><GradBar pct={tok.graduationPct} height={6} /></span>
+				<p>
+					When 4.2 ETH is in the bonding curve, the coin moves to Uniswap and trades on the open
+					market.
+				</p>
+			</div>
+		{/if}
+
+		{#if held}
+			<div class="position">
+				<span>Your position</span>
+				<b>{fmtUsd(heldValue)}</b>
+				<small
+					>{fmtTok(held.tokens)}
+					{sym}{#if netCostUsd > 0}
+						· <span class:up={heldPnl >= 0} class:down={heldPnl < 0}>{fmtPct(heldPnl)}</span
+						>{/if}</small
 				>
 			</div>
-		</div>
-	{:else}
-		<div class="actions">
-			<button class="btn-lime" onclick={() => openBuy(id)}>Buy</button>
-			<button class="btn-quiet" disabled={!held} onclick={() => (selling = true)}>Sell</button>
-		</div>
+		{/if}
+
+		{#if selling && held}
+			<div class="sell">
+				<div class="fracs" role="group" aria-label="Amount to sell">
+					{#each [0.25, 0.5, 1] as const as f (f)}
+						<button class="chip" aria-pressed={frac === f} onclick={() => (frac = f)}
+							>{f * 100}%</button
+						>
+					{/each}
+				</div>
+				<div class="actions">
+					<button class="btn-quiet" onclick={() => (selling = false)}>Cancel</button>
+					<button class="btn-quiet sell-go" disabled={busy} onclick={doSell}
+						>{busy ? 'Selling…' : `Sell ${fmtUsd(heldValue * frac)}`}</button
+					>
+				</div>
+			</div>
+		{:else}
+			<div class="actions">
+				<button class="btn-lime" disabled={tok.graduated} onclick={() => openBuy(id)}>Buy</button>
+				<button class="btn-quiet" disabled={!held || tok.graduated} onclick={() => (selling = true)}
+					>Sell</button
+				>
+			</div>
+		{/if}
 	{/if}
 
 	<div class="tabs" role="tablist">
@@ -119,37 +162,34 @@
 	</div>
 	<ul class="list">
 		{#if tab === 'trades'}
-			{#each trades as t, i (i)}
+			{#each detail?.trades ?? [] as t (t.tx + t.side)}
 				<li>
 					<span class="side {t.side}">{t.side === 'buy' ? 'Buy' : 'Sell'}</span>
-					<span class="who">{t.who}</span>
-					<span>{t.amt}</span>
-					<span class="dim">{t.time}</span>
+					<span class="who">{t.trader.toLowerCase() === me ? 'you' : short(t.trader)}</span>
+					<span>{t.eth.toFixed(4)} ETH</span>
+					<span class="dim">{ago(t.at)}</span>
 				</li>
+			{:else}
+				<li class="empty">No trades yet. The first buyer gets the lowest price.</li>
 			{/each}
 		{:else}
-			<li>
-				<span class="rank">1</span><span class="who"
-					>{agent.operator} <em>operator · locked</em></span
-				><span>8.0%</span>
-			</li>
-			{#each holders as h, i (i)}
+			{#each detail?.holders ?? [] as h, i (h.trader)}
 				<li>
-					<span class="rank">{i + 2}</span><span class="who">{h.who}</span><span>{h.pct}%</span>
+					<span class="rank">{i + 1}</span>
+					<span class="who">{h.trader.toLowerCase() === me ? 'you' : short(h.trader)}</span>
+					<span>{h.pct.toFixed(2)}%</span>
 				</li>
+			{:else}
+				<li class="empty">Nobody holds ${sym} yet.</li>
 			{/each}
-			<li>
-				<span class="rank">·</span><span class="who">you</span><span
-					>{held ? ((held.amt / SUPPLY) * 100).toFixed(2) + '%' : '—'}</span
-				>
-			</li>
 		{/if}
 	</ul>
 
 	<p class="lock">
 		<Lock size={16} />
 		<span
-			>{agent.operator} holds 8% of supply. It unlocks monthly over 12 months, and 41% is still locked.</span
+			>Launched on Pons. The whole supply started in the bonding curve, with no team allocation. At
+			graduation, the liquidity is locked forever.</span
 		>
 	</p>
 </Sheet>
@@ -326,10 +366,10 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.who em {
-		font-family: var(--f-ui);
-		font-style: normal;
-		color: var(--agent);
+	.list li.empty {
+		display: block;
+		padding: 14px 0;
+		color: var(--mut);
 	}
 	.rank {
 		color: var(--mut-2);

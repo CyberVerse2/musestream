@@ -1,5 +1,10 @@
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, ServerInit } from '@sveltejs/kit';
 import { randomBytes } from 'node:crypto';
+import { watchCoinEvents } from '$lib/server/market';
+
+export const init: ServerInit = () => {
+	watchCoinEvents();
+};
 
 // Viewers are anonymous until wallets arrive: a random name kept in a cookie.
 export const handle: Handle = async ({ event, resolve }) => {

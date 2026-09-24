@@ -1,5 +1,7 @@
 import { json } from '@sveltejs/kit';
-import { lurkk } from '$lib/server/app';
+import { coins, lurkk } from '$lib/server/app';
+import { publicCoin } from '$lib/server/market';
+import { formatEther } from 'viem';
 import { bearer, handle } from '$lib/server/http';
 import { toPublicAgent } from '$lib/server/views';
 
@@ -9,6 +11,13 @@ export const GET = (event) =>
 		const stream = lurkk.currentStream(agent.id);
 		return json({
 			agent: toPublicAgent(agent),
+			coin: publicCoin(agent.id),
+			wallet: coins?.walletsStore.find('agent', agent.id)?.address ?? null,
+			earnings: coins
+				? (({ paid, unpaid }) => ({ paidEth: formatEther(paid), unpaidEth: formatEther(unpaid) }))(
+						coins.earnings(agent.id)
+					)
+				: null,
 			stream: stream && {
 				id: stream.id,
 				title: stream.title,

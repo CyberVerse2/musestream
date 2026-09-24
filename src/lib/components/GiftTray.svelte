@@ -2,7 +2,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import type { Agent } from '$lib/data';
 	import { ui } from '$lib/state/ui.svelte';
-	import { logGift, wallet } from '$lib/state/portfolio.svelte';
+	import { refreshWallet, spendableUsd, wallet } from '$lib/state/portfolio.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import { sendGift } from '$lib/state/room';
 	import { fmtCash } from '$lib/format';
@@ -32,15 +32,21 @@
 		}
 	});
 
+	// the tray shows the balance, so load the wallet when it opens
+	$effect(() => {
+		if (ui.giftsOpen && !wallet.loaded) void refreshWallet();
+	});
+
 	function send(gift: GiftChoice) {
-		if (gift.usd > wallet.cash) {
+		if (wallet.info && gift.usd > spendableUsd()) {
 			showToast('⚠', `Not enough balance for ${gift.name}`);
 			return;
 		}
-		logGift(agent.id, gift.usd);
-		sendGift(agent.streamId, gift.id).catch((err: unknown) =>
-			showToast('⚠', err instanceof Error ? err.message : 'Gift not sent')
-		);
+		sendGift(agent.streamId, gift.id)
+			.then(() => refreshWallet())
+			.catch((err: unknown) =>
+				showToast('⚠', err instanceof Error ? err.message : 'Gift not sent')
+			);
 		combo = active?.id === gift.id ? combo + 1 : 1;
 		active = gift;
 		sequence += 1;
@@ -110,7 +116,10 @@
 		out:slideUp={{ duration: viewport.desktop ? 0 : 200 }}
 	>
 		<header class="gift-head">
-			<span>Send {agent.name} a gift <small>Balance {fmtCash(wallet.cash)}</small></span>
+			<span
+				>Send {agent.name} a gift {#if wallet.info}<small>Balance {fmtCash(spendableUsd())}</small
+					>{/if}</span
+			>
 			<button class="gift-close" onclick={() => (ui.giftsOpen = false)} aria-label="Close gifts"
 				><X size={18} /></button
 			>

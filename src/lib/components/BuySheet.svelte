@@ -2,12 +2,10 @@
 	import AgentAvatar from './AgentAvatar.svelte';
 	import { onDestroy } from 'svelte';
 	import { closeSheet } from '$lib/state/ui.svelte';
-	import { buy, wallet } from '$lib/state/portfolio.svelte';
-	import { tokenOf } from '$lib/state/market.svelte';
-	import { SUPPLY } from '$lib/data';
+	import { buy, refreshWallet, spendableUsd, wallet } from '$lib/state/portfolio.svelte';
+	import { coinOf, market } from '$lib/state/market.svelte';
 	import { agentById } from '$lib/state/directory.svelte';
-	import { quoteBuy } from '$shared/trading';
-	import { clamp, fmtCash, fmtPrice, fmtTok } from '$lib/format';
+	import { fmtCash, fmtPrice, fmtTok } from '$lib/format';
 	import Sheet from './Sheet.svelte';
 	import { CheckCircle } from 'phosphor-svelte';
 
@@ -15,31 +13,51 @@
 
 	const PRESETS = [10, 25, 50, 100];
 	let usd = $state(25);
-	let receipt = $state<ReturnType<typeof quoteBuy> | null>(null);
+	let busy = $state(false);
+	let error = $state<string | null>(null);
+	let receipt = $state<{ tokens: number; eth: number } | null>(null);
 	let closeTimer: ReturnType<typeof setTimeout>;
 	onDestroy(() => clearTimeout(closeTimer));
 
+	if (!wallet.loaded) void refreshWallet();
+
 	const sym = $derived(id.toUpperCase());
 	const agent = $derived(agentById(id));
-	const tok = $derived(tokenOf(id));
-	const tokens = $derived(quoteBuy(usd, tok.price).tokens);
-	const impact = $derived(clamp((usd / (tok.price * SUPPLY * 70)) * 100, 0.1, 12));
-	const short = $derived(usd > wallet.cash);
+	const tok = $derived(coinOf(id));
+	const eth = $derived(market.ethUsd ? usd / market.ethUsd : 0);
+	// before price impact; the server applies the exact curve math and a 3% slippage limit
+	const tokens = $derived(tok && tok.price > 0 ? (usd * 0.99) / tok.price : 0);
+	const balance = $derived(spendableUsd());
+	const short = $derived(wallet.loaded && usd > balance);
 
-	function confirm() {
-		if (receipt || short) return;
-		receipt = buy(id, usd);
-		if (receipt) closeTimer = setTimeout(closeSheet, 1500);
+	async function confirm() {
+		if (receipt || short || busy || !tok) return;
+		busy = true;
+		error = null;
+		try {
+			const res = await buy(id, usd);
+			receipt = { tokens: Number(res.tokens), eth: Number(res.eth) };
+			closeTimer = setTimeout(closeSheet, 1800);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'The buy did not go through.';
+		} finally {
+			busy = false;
+		}
 	}
 </script>
 
 <Sheet label="Buy ${sym}" onclose={closeSheet}>
-	{#if !receipt}
+	{#if !tok}
+		<p class="note">${sym} is still launching. Try again in a moment.</p>
+	{:else if !receipt}
 		<div class="head">
 			<AgentAvatar {agent} size={44} />
 			<div>
 				<h2>Buy ${sym}</h2>
-				<p>{fmtPrice(tok.price)} · balance {fmtCash(wallet.cash)}</p>
+				<p>
+					{fmtPrice(tok.price)}
+					{#if wallet.info}· balance {fmtCash(balance)}{/if}
+				</p>
 			</div>
 		</div>
 
@@ -49,7 +67,7 @@
 				<button
 					class="chip"
 					aria-pressed={usd === p}
-					disabled={p > wallet.cash}
+					disabled={wallet.loaded && p > balance}
 					onclick={() => (usd = p)}>${p}</button
 				>
 			{/each}
@@ -57,32 +75,33 @@
 
 		<dl class="rows">
 			<div>
+				<dt>You pay</dt>
+				<dd>≈ {eth.toFixed(5)} ETH</dd>
+			</div>
+			<div>
 				<dt>You get</dt>
 				<dd>≈ {fmtTok(tokens)} {sym}</dd>
 			</div>
 			<div>
-				<dt>Price impact</dt>
-				<dd>{impact.toFixed(1)}%</dd>
-			</div>
-			<div>
 				<dt>Fee</dt>
-				<dd>1% · half goes to {agent.name}</dd>
+				<dd>1% · a share goes to {agent.name}</dd>
 			</div>
 		</dl>
 
-		<button class="btn-lime confirm" disabled={short} onclick={confirm}>
-			{short ? 'Not enough balance' : `Buy $${usd} of ${sym}`}
+		{#if error}<p class="error" role="alert">{error}</p>{/if}
+		<button class="btn-lime confirm" disabled={short || busy} onclick={confirm}>
+			{busy ? 'Buying…' : short ? 'Not enough balance' : `Buy $${usd} of ${sym}`}
 		</button>
 		<p class="note">
-			{tok.graduated
-				? 'Demo trade on the open market.'
-				: 'Demo trade. The coin graduates to the open market at $100K market cap.'}
+			{wallet.info?.testMoney ? 'Test ETH on a local chain. ' : ''}{tok.graduated
+				? 'This coin trades on the open market.'
+				: 'The coin moves to the open market when 4.2 ETH is in its curve.'}
 		</p>
 	{:else}
 		<div class="done">
 			<CheckCircle size={56} weight="fill" />
 			<h2>You bought ${sym}</h2>
-			<p>+{fmtTok(receipt.tokens)} {sym} is in your wallet.</p>
+			<p>+{fmtTok(receipt.tokens)} {sym} for {receipt.eth.toFixed(5)} ETH.</p>
 		</div>
 	{/if}
 </Sheet>
@@ -153,6 +172,12 @@
 		width: 100%;
 		margin-top: 16px;
 		min-height: 54px;
+	}
+	.error {
+		margin-top: 12px;
+		font-size: 13px;
+		color: var(--down);
+		text-align: center;
 	}
 	.note {
 		margin-top: 12px;

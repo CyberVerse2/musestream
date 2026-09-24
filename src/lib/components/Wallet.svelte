@@ -1,50 +1,64 @@
 <script lang="ts">
 	import AgentAvatar from './AgentAvatar.svelte';
 	import { onMount } from 'svelte';
-	import { findAgent } from '$lib/state/directory.svelte';
-	import { holdings, wallet } from '$lib/state/portfolio.svelte';
+	import { refreshWallet, wallet } from '$lib/state/portfolio.svelte';
 	import { ui, openToken } from '$lib/state/ui.svelte';
-	import { tokenOf } from '$lib/state/market.svelte';
+	import { market } from '$lib/state/market.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import { fmtCash, fmtPct, fmtTok } from '$lib/format';
 	import { DOWN, UP, sparkline, trendColor } from '$lib/sparkline';
-	import { ArrowDownLeft, ArrowUpRight, Copy, Gift } from 'phosphor-svelte';
+	import { ArrowDownLeft, ArrowUpRight, Copy } from 'phosphor-svelte';
 
 	const POINTS = 80;
 
+	// load when the tab opens, and again after trades (portfolio refreshes itself then)
+	$effect(() => {
+		if (ui.tab === 'wallet') void refreshWallet();
+	});
+
+	const info = $derived(wallet.info);
+	const rate = $derived(info?.ethUsd ?? market.ethUsd ?? 0);
+	/** ETH put into each coin minus ETH taken out, from the viewer's own trades */
+	const netCost = $derived.by(() => {
+		const out: Record<string, number> = {};
+		for (const a of info?.activity ?? [])
+			out[a.handle] = (out[a.handle] ?? 0) + (a.side === 'buy' ? a.eth : -a.eth);
+		return out;
+	});
 	const rows = $derived(
-		Object.entries(holdings)
-			.map(([id, h]) => {
-				const tok = tokenOf(id);
-				const agent = findAgent(id);
+		(info?.holdings ?? [])
+			.map((h) => {
+				const value = h.valueEth * rate;
+				const cost = (netCost[h.handle] ?? 0) * rate;
 				return {
-					id,
-					// a coin stays in the wallet after its agent stops streaming
-					agent: agent ?? { img: '', handle: id, name: `@${id}` },
-					live: !!agent,
-					h,
-					value: h.amt * tok.price,
-					pnl: (tok.price / h.cost - 1) * 100,
-					hist: tok.hist.slice(-40)
+					...h,
+					agent: { img: h.avatarUrl ?? '', handle: h.handle },
+					value,
+					pnl: cost > 0 ? ((value - cost) / cost) * 100 : 0,
+					hist: h.history.length > 1 ? h.history : [0, 0]
 				};
 			})
 			.sort((a, b) => b.value - a.value)
 	);
+	const cash = $derived((info?.eth ?? 0) * rate);
 	const inCoins = $derived(rows.reduce((s, r) => s + r.value, 0));
-	const cost = $derived(rows.reduce((s, r) => s + r.h.amt * r.h.cost, 0));
+	const cost = $derived(rows.reduce((s, r) => s + Math.max(0, (netCost[r.handle] ?? 0) * rate), 0));
 	const pnl = $derived(inCoins - cost);
 	const pnlPct = $derived(cost ? (pnl / cost) * 100 : 0);
-	const total = $derived(wallet.cash + inCoins);
+	const total = $derived(cash + inCoins);
+	// balance over the recent price history of each coin held; cash held flat
 	const series = $derived.by(() => {
-		const out = Array.from({ length: POINTS }, () => wallet.cash);
-		for (const [id, h] of Object.entries(holdings)) {
-			const hist = tokenOf(id).hist.slice(-POINTS);
+		const out = Array.from({ length: POINTS }, () => cash);
+		for (const r of rows) {
+			const hist = r.history.slice(-POINTS);
 			const offset = POINTS - hist.length;
-			hist.forEach((p, i) => (out[i + offset]! += h.amt * p));
+			hist.forEach((p, i) => (out[i + offset]! += r.tokens * p * rate));
 		}
 		return out;
 	});
 	const seriesUp = $derived(series.at(-1)! >= series[0]!);
+	// a few trades make a misleading step; draw the line once there is real history
+	const showChart = $derived(rows.length > 0 && rows.every((r) => r.history.length >= 20));
 
 	let now = $state(Date.now());
 	onMount(() => {
@@ -52,15 +66,16 @@
 		return () => clearInterval(t);
 	});
 	function ago(at: number) {
-		const s = Math.max(1, Math.round((now - at) / 1000));
-		if (s < 60) return 'now';
-		if (s < 3600) return `${Math.round(s / 60)}m`;
-		return `${Math.round(s / 3600)}h`;
+		const sec = Math.max(1, Math.round((now - at) / 1000));
+		if (sec < 60) return 'now';
+		if (sec < 3600) return `${Math.round(sec / 60)}m`;
+		return `${Math.round(sec / 3600)}h`;
 	}
-	const short = $derived(`${wallet.address.slice(0, 4)}…${wallet.address.slice(-4)}`);
+	const short = $derived(info ? `${info.address.slice(0, 6)}…${info.address.slice(-4)}` : '');
 	async function copyAddress() {
+		if (!info) return;
 		try {
-			await navigator.clipboard.writeText(wallet.address);
+			await navigator.clipboard.writeText(info.address);
 			showToast('✓', 'Address copied');
 		} catch {
 			showToast('⚠', 'Could not copy the address');
@@ -72,102 +87,104 @@
 	<div class="page-inner">
 		<header class="head">
 			<h1 class="page-title">Wallet</h1>
-			<button class="addr press" onclick={copyAddress} aria-label="Copy wallet address"
-				>{short}<Copy size={14} /></button
-			>
+			{#if info}
+				<button class="addr press" onclick={copyAddress} aria-label="Copy wallet address"
+					>{short}<Copy size={14} /></button
+				>
+			{/if}
 		</header>
 
-		<div class="hero">
-			<p class="label">Total balance</p>
-			<p class="total">{fmtCash(total)}</p>
-			{#if rows.length}
-				<p class="pnl" class:up={pnl >= 0} class:down={pnl < 0}>
-					{pnl >= 0 ? '+' : ''}{fmtCash(pnl)} ({fmtPct(pnlPct)}) <span>on your coins</span>
-				</p>
-			{/if}
-			<canvas
-				class="chart"
-				use:sparkline={{ data: series, color: seriesUp ? UP : DOWN, tail: true }}
-			></canvas>
-			<div class="split">
-				<div><span>Cash</span><b>{fmtCash(wallet.cash)}</b></div>
-				<div><span>In coins</span><b>{fmtCash(inCoins)}</b></div>
-			</div>
-		</div>
-
-		<h2 class="section-title">Coins <small>{rows.length} held</small></h2>
-		{#if rows.length}
-			<ul class="list">
-				{#each rows as r (r.id)}
-					<li>
-						<button class="row press" onclick={() => openToken(r.id)}>
-							<span class="ava"
-								><AgentAvatar agent={r.agent} size={40} />{#if r.live}<i class="dot"></i>{/if}</span
-							>
-							<span class="mid">
-								<b>${r.id.toUpperCase()}</b>
-								<small
-									>{fmtTok(r.h.amt)} · {r.agent.name}{r.live ? ' is live' : ' is offline'}</small
-								>
-							</span>
-							<canvas
-								class="spark"
-								use:sparkline={{
-									data: r.hist,
-									color: trendColor(r.pnl),
-									fill: false
-								}}
-							></canvas>
-							<span class="end">
-								<b>{fmtCash(r.value)}</b>
-								<small class:up={r.pnl >= 0} class:down={r.pnl < 0}>{fmtPct(r.pnl)}</small>
-							</span>
-						</button>
-					</li>
-				{/each}
-			</ul>
-		{:else}
+		{#if !wallet.loaded}
+			<p class="quiet">Loading your wallet…</p>
+		{:else if !info}
 			<div class="empty">
-				<p>You do not hold any coins yet. Buy an agent’s coin from its stream.</p>
-				<button class="btn-quiet" onclick={() => (ui.tab = 'live')}>Watch live</button>
+				<p>{wallet.error ?? 'Your wallet is not available.'}</p>
+				<button class="btn-quiet" onclick={() => refreshWallet()}>Try again</button>
 			</div>
-		{/if}
-
-		<h2 class="section-title">Activity</h2>
-		{#if wallet.activity.length}
-			<ul class="list">
-				{#each wallet.activity as a (a.id)}
-					{@const agent = findAgent(a.agent) ?? { name: `@${a.agent}` }}
-					<li class="row act">
-						<span class="ico {a.kind}">
-							{#if a.kind === 'buy'}<ArrowDownLeft size={18} weight="bold" />
-							{:else if a.kind === 'sell'}<ArrowUpRight size={18} weight="bold" />
-							{:else}<Gift size={18} weight="bold" />{/if}
-						</span>
-						<span class="mid">
-							<b
-								>{a.kind === 'buy'
-									? `Bought $${a.agent.toUpperCase()}`
-									: a.kind === 'sell'
-										? `Sold $${a.agent.toUpperCase()}`
-										: `Gift to ${agent.name}`}</b
-							>
-							<small
-								>{a.kind === 'gift'
-									? 'Sent in chat'
-									: `${fmtTok(a.tokens)} ${a.agent.toUpperCase()}`}
-								· {ago(a.at)}</small
-							>
-						</span>
-						<span class="end"
-							><b class:up={a.kind === 'sell'}>{a.kind === 'sell' ? '+' : '−'}{fmtCash(a.usd)}</b
-							></span
-						>
-					</li>
-				{/each}
-			</ul>
 		{:else}
-			<p class="quiet">Your trades and gifts show up here.</p>
+			<div class="hero">
+				<p class="label">
+					Total balance{#if info.testMoney}<span class="test">test ETH</span>{/if}
+				</p>
+				<p class="total">{fmtCash(total)}</p>
+				{#if rows.length && cost > 0}
+					<p class="pnl" class:up={pnl >= 0} class:down={pnl < 0}>
+						{pnl >= 0 ? '+' : ''}{fmtCash(pnl)} ({fmtPct(pnlPct)}) <span>on your coins</span>
+					</p>
+				{/if}
+				{#if showChart}
+					<canvas
+						class="chart"
+						use:sparkline={{ data: series, color: seriesUp ? UP : DOWN, tail: true }}
+					></canvas>
+				{/if}
+				<div class="split">
+					<div>
+						<span>ETH</span><b>{fmtCash(cash)}</b><small>{info.eth.toFixed(4)} ETH</small>
+					</div>
+					<div><span>In coins</span><b>{fmtCash(inCoins)}</b></div>
+				</div>
+			</div>
+
+			<h2 class="section-title">Coins <small>{rows.length} held</small></h2>
+			{#if rows.length}
+				<ul class="list">
+					{#each rows as r (r.handle)}
+						<li>
+							<button class="row press" onclick={() => openToken(r.handle)} disabled={!r.live}>
+								<span class="ava"
+									><AgentAvatar agent={r.agent} size={40} />{#if r.live}<i class="dot"
+										></i>{/if}</span
+								>
+								<span class="mid">
+									<b>${r.handle.toUpperCase()}</b>
+									<small>{fmtTok(r.tokens)} · {r.name}{r.live ? ' is live' : ' is offline'}</small>
+								</span>
+								<canvas
+									class="spark"
+									use:sparkline={{ data: r.hist, color: trendColor(r.pnl), fill: false }}
+								></canvas>
+								<span class="end">
+									<b>{fmtCash(r.value)}</b>
+									{#if (netCost[r.handle] ?? 0) > 0}
+										<small class:up={r.pnl >= 0} class:down={r.pnl < 0}>{fmtPct(r.pnl)}</small>
+									{/if}
+								</span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<div class="empty">
+					<p>You do not hold any coins yet. Buy an agent’s coin from its stream.</p>
+					<button class="btn-quiet" onclick={() => (ui.tab = 'live')}>Watch live</button>
+				</div>
+			{/if}
+
+			<h2 class="section-title">Activity</h2>
+			{#if info.activity.length}
+				<ul class="list">
+					{#each info.activity as a (a.tx + a.side)}
+						<li class="row act">
+							<span class="ico {a.side}">
+								{#if a.side === 'buy'}<ArrowDownLeft size={18} weight="bold" />
+								{:else}<ArrowUpRight size={18} weight="bold" />{/if}
+							</span>
+							<span class="mid">
+								<b>{a.side === 'buy' ? 'Bought' : 'Sold'} ${a.handle.toUpperCase()}</b>
+								<small>{fmtTok(a.tokens)} {a.handle.toUpperCase()} · {ago(a.at)}</small>
+							</span>
+							<span class="end"
+								><b class:up={a.side === 'sell'}
+									>{a.side === 'sell' ? '+' : '−'}{fmtCash(a.eth * rate)}</b
+								></span
+							>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<p class="quiet">Your trades show up here.</p>
+			{/if}
 		{/if}
 	</div>
 </section>
@@ -233,6 +250,19 @@
 		padding: 12px 14px;
 		border-radius: var(--r-md);
 		background: var(--surface);
+	}
+	.split small {
+		font-size: 11px;
+		color: var(--mut-2);
+	}
+	.test {
+		margin-left: 8px;
+		padding: 2px 6px;
+		border-radius: 4px;
+		background: var(--agent-soft);
+		color: var(--agent);
+		font-size: 11px;
+		font-weight: 600;
 	}
 	.split span {
 		font-size: 12px;

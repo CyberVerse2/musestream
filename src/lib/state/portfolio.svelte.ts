@@ -1,51 +1,57 @@
-import { applyBuy, applySell, type Holding } from '$shared/trading';
-import { tokenOf } from './market.svelte';
-
-export const holdings = $state<Record<string, Holding>>({});
-
-export interface Activity {
-	id: number;
-	kind: 'buy' | 'sell' | 'gift';
-	agent: string;
-	usd: number;
-	tokens: number;
-	at: number;
-}
+// The viewer's wallet, from the server: ETH, coins held, and trades.
+import { api, type WalletInfo } from '../api';
+import { showToast } from './notifications.svelte';
+import { setCoin } from './market.svelte';
 
 export const wallet = $state({
-	/** demo buying power, in USD */
-	cash: 1000,
-	address: '7xKpQm3fVh2nW9rLd4sTc8yBjE5gUa1oZ6iNvR3fQ',
-	activity: [] as Activity[]
+	loaded: false,
+	error: null as string | null,
+	info: null as WalletInfo | null
 });
 
-let sequence = 0;
-function log(entry: Omit<Activity, 'id' | 'at'>) {
-	wallet.activity.unshift({ ...entry, id: ++sequence, at: Date.now() });
-	if (wallet.activity.length > 30) wallet.activity.length = 30;
+let inflight: Promise<void> | null = null;
+export function refreshWallet(): Promise<void> {
+	inflight ??= api
+		.wallet()
+		.then((info) => {
+			wallet.info = info;
+			wallet.error = null;
+		})
+		.catch((err: unknown) => {
+			wallet.error = err instanceof Error ? err.message : 'Could not load your wallet.';
+		})
+		.finally(() => {
+			wallet.loaded = true;
+			inflight = null;
+		});
+	return inflight;
 }
 
-export function buy(id: string, usd: number) {
-	if (usd > wallet.cash) return null;
-	const result = applyBuy(holdings[id], usd, tokenOf(id).price);
-	holdings[id] = result.holding;
-	wallet.cash -= usd;
-	log({ kind: 'buy', agent: id, usd, tokens: result.quote.tokens });
-	return result.quote;
+/** dollars of ETH the viewer can spend, or 0 when unknown */
+export function spendableUsd(): number {
+	const info = wallet.info;
+	return info?.ethUsd ? info.eth * info.ethUsd : 0;
 }
 
-export function sell(id: string, fraction: number) {
-	const holding = holdings[id];
-	if (!holding) return null;
-	const result = applySell(holding, fraction, tokenOf(id).price);
-	if (result.holding) holdings[id] = result.holding;
-	else delete holdings[id];
-	wallet.cash += result.usd;
-	log({ kind: 'sell', agent: id, usd: result.usd, tokens: result.tokens });
-	return result;
+export function holdingOf(handle: string) {
+	return wallet.info?.holdings.find((h) => h.handle === handle) ?? null;
 }
 
-export function logGift(id: string, usd: number) {
-	wallet.cash = Math.max(0, wallet.cash - usd);
-	log({ kind: 'gift', agent: id, usd, tokens: 0 });
+export async function buy(handle: string, usd: number) {
+	const res = await api.buy(handle, usd);
+	setCoin(handle, res.coin);
+	void refreshWallet();
+	return res;
+}
+
+export async function sell(handle: string, fraction: 0.25 | 0.5 | 1) {
+	try {
+		const res = await api.sell(handle, fraction);
+		setCoin(handle, res.coin);
+		void refreshWallet();
+		return res;
+	} catch (err) {
+		showToast('⚠', err instanceof Error ? err.message : 'The sale did not go through');
+		return null;
+	}
 }

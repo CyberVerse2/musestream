@@ -70,6 +70,63 @@ const MIGRATIONS: string[] = [
 	ALTER TABLE video_segments ADD COLUMN source TEXT;
 	UPDATE video_segments SET source = json_object('kind', 'file', 'url', url) WHERE url IS NOT NULL;
 	ALTER TABLE video_segments DROP COLUMN url;
+	`,
+	// coins on chain. Wei and token amounts are decimal strings: they do not fit in 64 bits.
+	`
+	CREATE TABLE wallets (
+		id          TEXT PRIMARY KEY,
+		owner_kind  TEXT NOT NULL CHECK (owner_kind IN ('treasury', 'agent', 'viewer')),
+		owner_id    TEXT NOT NULL,
+		address     TEXT NOT NULL UNIQUE,
+		provider    TEXT NOT NULL,
+		secret      TEXT NOT NULL,
+		created_at  INTEGER NOT NULL,
+		UNIQUE (owner_kind, owner_id)
+	);
+	CREATE TABLE coins (
+		agent_id       TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+		status         TEXT NOT NULL CHECK (status IN ('launching', 'live', 'failed')),
+		token          TEXT,
+		curve          TEXT,
+		launch_tx      TEXT,
+		quote_reserve  TEXT NOT NULL DEFAULT '0',
+		token_reserve  TEXT NOT NULL DEFAULT '0',
+		real_quote     TEXT NOT NULL DEFAULT '0',
+		graduated      INTEGER NOT NULL DEFAULT 0,
+		error          TEXT,
+		created_at     INTEGER NOT NULL
+	);
+	CREATE INDEX coins_by_curve ON coins(curve);
+	CREATE TABLE trades (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		agent_id    TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		side        TEXT NOT NULL CHECK (side IN ('buy', 'sell')),
+		trader      TEXT NOT NULL,
+		quote_wei   TEXT NOT NULL,
+		tokens      TEXT NOT NULL,
+		fee_wei     TEXT NOT NULL,
+		price_eth   REAL NOT NULL,
+		block       INTEGER NOT NULL,
+		tx          TEXT NOT NULL,
+		log_index   INTEGER NOT NULL,
+		at          INTEGER NOT NULL,
+		UNIQUE (tx, log_index)
+	);
+	CREATE INDEX trades_by_agent ON trades(agent_id, id);
+	CREATE TABLE fee_ledger (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		agent_id    TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+		trade_id    INTEGER NOT NULL UNIQUE REFERENCES trades(id) ON DELETE CASCADE,
+		agent_wei   TEXT NOT NULL,
+		treasury_wei TEXT NOT NULL,
+		payout_tx   TEXT,
+		paid_at     INTEGER
+	);
+	CREATE TABLE chain_cursor (
+		name   TEXT PRIMARY KEY,
+		block  INTEGER NOT NULL
+	);
+	ALTER TABLE gifts ADD COLUMN tx TEXT;
 	`
 ];
 

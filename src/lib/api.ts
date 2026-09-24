@@ -11,6 +11,20 @@ export interface PublicAgent {
 	bio: string;
 	avatarUrl: string | null;
 }
+/** an agent's coin; prices in ETH, and in dollars when the ETH rate is known */
+export interface PublicCoin {
+	status: 'launching' | 'live' | 'failed';
+	token: string | null;
+	priceEth: number;
+	priceUsd: number | null;
+	marketCapEth: number;
+	marketCapUsd: number | null;
+	graduationPct: number;
+	graduated: boolean;
+	holders: number;
+	/** recent prices in ETH, oldest first */
+	history: number[];
+}
 export interface PublicStream {
 	id: string;
 	title: string;
@@ -19,6 +33,45 @@ export interface PublicStream {
 	likes: number;
 	viewers: number;
 	video: VideoSource | null;
+	coin: PublicCoin | null;
+}
+export interface PublicTrade {
+	side: 'buy' | 'sell';
+	trader: string;
+	eth: number;
+	tokens: number;
+	at: number;
+	tx: string;
+}
+export interface CoinDetail {
+	ethUsd: number | null;
+	coin: PublicCoin;
+	trades: PublicTrade[];
+	holders: { trader: string; tokens: number; pct: number }[];
+}
+export interface WalletInfo {
+	address: string;
+	/** a local test chain: the ETH here is not real money */
+	testMoney: boolean;
+	ethUsd: number | null;
+	eth: number;
+	holdings: {
+		handle: string;
+		name: string;
+		avatarUrl: string | null;
+		live: boolean;
+		tokens: number;
+		valueEth: number;
+		history: number[];
+	}[];
+	activity: {
+		side: 'buy' | 'sell';
+		handle: string;
+		eth: number;
+		tokens: number;
+		at: number;
+		tx: string;
+	}[];
 }
 export interface PublicChat {
 	id: number;
@@ -56,7 +109,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-	liveStreams: () => request<{ streams: PublicStream[] }>('/api/streams'),
+	liveStreams: () => request<{ ethUsd: number | null; streams: PublicStream[] }>('/api/streams'),
+	coin: (handle: string) => request<CoinDetail>(`/api/coins/${handle}`),
+	buy: (handle: string, usd: number) =>
+		request<{ tx: string; eth: string; tokens: string; coin: PublicCoin }>(
+			`/api/coins/${handle}/buy`,
+			{
+				method: 'POST',
+				body: JSON.stringify({ usd })
+			}
+		),
+	sell: (handle: string, fraction: 0.25 | 0.5 | 1) =>
+		request<{ tx: string; eth: string; tokens: string; coin: PublicCoin }>(
+			`/api/coins/${handle}/sell`,
+			{
+				method: 'POST',
+				body: JSON.stringify({ fraction })
+			}
+		),
+	wallet: () => request<WalletInfo>('/api/wallet'),
 	chat: (streamId: string, text: string) =>
 		request<{ message: PublicChat }>(`/api/streams/${streamId}/chat`, {
 			method: 'POST',
@@ -68,7 +139,7 @@ export const api = {
 			body: JSON.stringify({ count })
 		}),
 	gift: (streamId: string, gift: string) =>
-		request<{ message: PublicChat }>(`/api/streams/${streamId}/gifts`, {
+		request<{ message: PublicChat; tx: string | null }>(`/api/streams/${streamId}/gifts`, {
 			method: 'POST',
 			body: JSON.stringify({ gift })
 		})

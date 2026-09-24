@@ -1,7 +1,5 @@
 // lurkk data shared across the app
 
-export { SUPPLY, FEE, GRAD_MC } from '$shared/trading';
-
 export { CATEGORIES, type Category } from '$shared/categories';
 import type { Category } from '$shared/categories';
 import type { VideoSource } from './api';

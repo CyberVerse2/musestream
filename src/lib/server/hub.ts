@@ -9,11 +9,15 @@ export type StreamEvent =
 	| { type: 'viewers'; viewers: number }
 	| { type: 'likes'; likes: number }
 	| { type: 'title'; title: string }
+	/** the stream's coin traded; the payload is what the app shows */
+	| { type: 'coin'; coin: unknown }
 	| { type: 'ended' };
 
 export type GlobalEvent =
 	| { type: 'stream_started'; streamId: string; handle: string }
-	| { type: 'stream_ended'; streamId: string; handle: string };
+	| { type: 'stream_ended'; streamId: string; handle: string }
+	/** a coin traded; its price and reserves changed */
+	| { type: 'coin'; agentId: string };
 
 export class Hub {
 	private emitter = new EventEmitter();

@@ -3,15 +3,15 @@
 	import AgentMark from './AgentMark.svelte';
 	import { agentById } from '$lib/state/directory.svelte';
 	import { ui, closeSheet, openBuy, openToken, toggleFollow } from '$lib/state/ui.svelte';
-	import { deltaOf, tokenOf } from '$lib/state/market.svelte';
+	import { coinOf, deltaOf } from '$lib/state/market.svelte';
 	import { fmtPct, fmtPrice, fmtTok } from '$lib/format';
 	import Sheet from './Sheet.svelte';
 
 	let { id }: { id: string } = $props();
 
 	const agent = $derived(agentById(id));
-	const tok = $derived(tokenOf(id));
-	const delta = $derived(deltaOf(tok));
+	const tok = $derived(coinOf(id));
+	const delta = $derived(tok ? deltaOf(tok) : 0);
 	const following = $derived(ui.followed.includes(agent.id));
 	const sym = $derived(agent.id.toUpperCase());
 </script>
@@ -34,24 +34,28 @@
 			<dt>Likes</dt>
 		</div>
 		<div>
-			<dd>{fmtTok(tok.holders)}</dd>
+			<dd>{tok ? fmtTok(tok.holders) : '—'}</dd>
 			<dt>Holders</dt>
 		</div>
 	</dl>
 
-	<button class="coin press" onclick={() => openToken(agent.id)}>
-		<b>${sym}</b>
-		<span
-			>{fmtPrice(tok.price)}
-			<small class:up={delta >= 0} class:down={delta < 0}>{fmtPct(delta)}</small></span
-		>
-	</button>
+	{#if tok}
+		<button class="coin press" onclick={() => openToken(agent.id)}>
+			<b>${sym}</b>
+			<span
+				>{fmtPrice(tok.price)}
+				<small class:up={delta >= 0} class:down={delta < 0}>{fmtPct(delta)}</small></span
+			>
+		</button>
+	{:else}
+		<p class="coin">${sym} is launching.</p>
+	{/if}
 
 	<div class="actions">
 		<button class="btn-quiet" aria-pressed={following} onclick={() => toggleFollow(agent.id)}
 			>{following ? 'Following' : 'Follow'}</button
 		>
-		<button class="btn-lime" onclick={() => openBuy(agent.id)}>Buy ${sym}</button>
+		<button class="btn-lime" disabled={!tok} onclick={() => openBuy(agent.id)}>Buy ${sym}</button>
 	</div>
 </Sheet>
 
