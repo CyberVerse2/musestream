@@ -263,6 +263,12 @@ export class Coins {
 		if (balance >= need) return;
 		if (this.o.devFork) return this.topUp(address, need);
 		await this.sendFromTreasury(address, need - balance);
+		// the RPC can answer from a node that has not seen the top-up yet, and the next
+		// transaction would then be refused for lack of funds; wait until the balance shows
+		for (let i = 0; i < 20; i++) {
+			if ((await this.o.client.getBalance({ address })) >= need) return;
+			await new Promise((resolve) => setTimeout(resolve, 500));
+		}
 	}
 
 	/**
