@@ -1,7 +1,7 @@
 // The live connection for the stream on screen: chat, likes, viewers, video.
 import { api, viewerName, type PublicChat, type PublicCoin, type VideoSource } from '../api';
 import { setCoin } from './market.svelte';
-import { pushChat } from './chat.svelte';
+import { pushChat, removeChat } from './chat.svelte';
 import { findAgent, refreshDirectory } from './directory.svelte';
 import { showToast } from './notifications.svelte';
 import { ui } from './ui.svelte';
@@ -73,6 +73,7 @@ export function watchRoom(agentId: string, streamId: string) {
 		if (snap.video) agent.video = snap.video;
 	});
 	on<PublicChat>('chat', (m) => addMessage(agentId, m));
+	on<{ id: number }>('chat_removed', ({ id }) => removeChat(agentId, id));
 	on<{ coin: PublicCoin }>('coin', ({ coin }) => setCoin(agentId, coin));
 	on<{ likes: number }>('likes', ({ likes }) => {
 		const agent = findAgent(agentId);

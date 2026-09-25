@@ -8,6 +8,8 @@ RUN apt-get update \
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# the commit id goes into the image for the admin dashboard; .git itself does not
+RUN node scripts/build-info.mjs && rm -rf .git
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24-bookworm-slim

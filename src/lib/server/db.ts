@@ -238,6 +238,35 @@ const MIGRATIONS: string[] = [
 	// a stream's reference picture, which its video starts from
 	`
 	ALTER TABLE streams ADD COLUMN image_url TEXT;
+	`,
+	// the admin dashboard: suspended agents, hidden chat, muted viewers, owner settings, the
+	// history of fee settlement runs, and a record of every admin action
+	`
+	ALTER TABLE agents ADD COLUMN suspended_at INTEGER;
+	ALTER TABLE chat_messages ADD COLUMN hidden_at INTEGER;
+	CREATE TABLE muted_viewers (
+		viewer    TEXT PRIMARY KEY,
+		muted_at  INTEGER NOT NULL
+	);
+	CREATE TABLE settings (
+		key    TEXT PRIMARY KEY,
+		value  TEXT NOT NULL
+	);
+	CREATE TABLE settle_runs (
+		id       INTEGER PRIMARY KEY AUTOINCREMENT,
+		at       INTEGER NOT NULL,
+		trigger  TEXT NOT NULL CHECK (trigger IN ('schedule', 'admin')),
+		ok       INTEGER NOT NULL,
+		result   TEXT NOT NULL
+	);
+	CREATE TABLE admin_audit (
+		id      INTEGER PRIMARY KEY AUTOINCREMENT,
+		at      INTEGER NOT NULL,
+		admin   TEXT NOT NULL,
+		action  TEXT NOT NULL,
+		target  TEXT,
+		detail  TEXT
+	);
 	`
 ];
 

@@ -54,6 +54,17 @@ interface Session {
 	stream: StreamInfo;
 	cast: ClipCast;
 	clips: LiveClip[];
+	startedAt: number;
+}
+
+/** what paid video is doing right now, for the owner */
+export interface ReactorStatus {
+	paused: boolean;
+	/** handles allowed paid live video */
+	agents: string[];
+	maxSessions: number;
+	maxSeconds: number;
+	sessions: { streamId: string; handle: string; startedAt: number; clips: number }[];
 }
 
 export class ReactorVideo implements VideoProvider {
@@ -65,6 +76,7 @@ export class ReactorVideo implements VideoProvider {
 	private watching = new Map<string, number>();
 	private idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 	private listener: ((streamId: string, source: VideoSource) => void) | null = null;
+	private paused = false;
 
 	constructor(opts: ReactorOptions) {
 		this.opts = opts;
@@ -136,8 +148,42 @@ export class ReactorVideo implements VideoProvider {
 		if (s) s.proc.stdin?.write(JSON.stringify({ stop: true, reason }) + '\n');
 	}
 
+	/** stop all paid video: running sessions end, and none start until it resumes */
+	setPaused(paused: boolean) {
+		this.paused = paused;
+		if (paused) for (const streamId of this.sessions.keys()) this.endSession(streamId, 'paused');
+	}
+
+	/** let an agent use paid live video, or stop it (ending its running session) */
+	allowAgent(handle: string, allowed: boolean) {
+		const agents = this.opts.agents;
+		const i = agents.indexOf(handle);
+		if (allowed && i < 0) agents.push(handle);
+		if (!allowed && i >= 0) {
+			agents.splice(i, 1);
+			for (const [streamId, s] of this.sessions)
+				if (s.stream.handle === handle) this.endSession(streamId, 'not_allowed');
+		}
+	}
+
+	status(): ReactorStatus {
+		return {
+			paused: this.paused,
+			agents: [...this.opts.agents],
+			maxSessions: this.opts.maxSessions,
+			maxSeconds: this.opts.maxSeconds,
+			sessions: [...this.sessions.values()].map((s) => ({
+				streamId: s.stream.streamId,
+				handle: s.stream.handle,
+				startedAt: s.startedAt,
+				clips: s.clips.length
+			}))
+		};
+	}
+
 	private canStart(stream: StreamInfo) {
 		return (
+			!this.paused &&
 			this.opts.agents.includes(stream.handle) &&
 			!this.starting.has(stream.streamId) &&
 			this.sessions.size + this.starting.size < this.opts.maxSessions &&
@@ -215,7 +261,15 @@ export class ReactorVideo implements VideoProvider {
 			resolveSource = res;
 			rejectSource = rej;
 		});
-		const session: Session = { proc, source, lastPrompt: prompt, stream, cast, clips: [] };
+		const session: Session = {
+			proc,
+			source,
+			lastPrompt: prompt,
+			stream,
+			cast,
+			clips: [],
+			startedAt
+		};
 		this.sessions.set(stream.streamId, session);
 		this.starting.delete(stream.streamId);
 

@@ -5,6 +5,8 @@ import type { VideoSource } from './video/provider.ts';
 
 export type StreamEvent =
 	| { type: 'chat'; message: ChatRow }
+	/** the owner took a chat message down */
+	| { type: 'chat_removed'; id: number }
 	| { type: 'video'; video: VideoSource }
 	| { type: 'viewers'; viewers: number }
 	| { type: 'likes'; likes: number }

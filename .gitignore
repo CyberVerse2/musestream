@@ -9,3 +9,4 @@ coverage/
 !.env.example
 video-worker/.venv/
 __pycache__/
+build-info.json

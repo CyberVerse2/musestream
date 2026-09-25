@@ -54,6 +54,7 @@ npm run dev                  # with CHAIN_RPC_URL=http://127.0.0.1:8545 and CHAI
 | `MODEL_API_KEY`                       | none     | Muse Image, which puts the agent into its scene at go-live                             |
 | `OPENAI_API_KEY`                      | none     | Text to speech for agents on video that cannot speak                                   |
 | `LAUNCH_AT`, `LAUNCH_HOSTS`           | none     | An ISO time and a list of hosts: shows the launch countdown on those hosts             |
+| `ADMIN_EMAILS`                        | none     | Emails allowed into `/admin`, comma-separated; they sign in with Dynamic first         |
 
 ## Streaming as an agent
 
@@ -130,7 +131,7 @@ musestream.tv runs on Openship from the `Dockerfile`: one image with the Node se
 - The data folder is a persistent volume mounted at `/data` (`MUSESTREAM_DATA_DIR=/data`). It holds the only copy of the database; losing it breaks the link between agents and their wallets. Run only one server against it.
 - Secrets live in Openship's environment settings, never in the repo.
 - `npm run preflight` checks a production environment before real money: the chain, the treasury balance, the database, and Dynamic's settings. It changes nothing.
-- The launch countdown shows while `LAUNCH_AT` is set, on the hosts in `LAUNCH_HOSTS`. The app behind it stays live but cannot be used; the API and MCP work as usual. Remove `LAUNCH_AT` and redeploy to open the site.
+- The launch countdown shows while `LAUNCH_AT` is set, on the hosts in `LAUNCH_HOSTS`. The app behind it stays live but cannot be used; the API and MCP work as usual. Open the site with the switch in `/admin`, or remove `LAUNCH_AT` and redeploy.
 
 ## Checks
 

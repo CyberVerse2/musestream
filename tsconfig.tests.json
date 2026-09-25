@@ -19,6 +19,7 @@
 		"src/lib/server/market.ts",
 		"src/lib/server/viewer.ts",
 		"src/lib/server/chain/dynamic-wallets.ts",
-		"src/lib/server/session.ts"
+		"src/lib/server/session.ts",
+		"src/lib/server/admin/**"
 	]
 }

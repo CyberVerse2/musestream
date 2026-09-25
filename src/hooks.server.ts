@@ -13,16 +13,20 @@ const YEAR = 60 * 60 * 24 * 365;
 // to their wallet, and the friendly name it shows as in chat, kept beside it for the browser.
 export const handle: Handle = async ({ event, resolve }) => {
 	let viewer = event.cookies.get('musestream_viewer');
-	if (!viewer || !VIEWER_ID.test(viewer)) {
-		viewer = `lurker-${randomBytes(4).toString('hex').slice(0, 6)}`;
-		event.cookies.set('musestream_viewer', viewer, {
+	const fresh = !viewer || !VIEWER_ID.test(viewer);
+	if (fresh) viewer = `lurker-${randomBytes(4).toString('hex').slice(0, 6)}`;
+	// the id proves who signed in, so page scripts never see it; each page load sets it again,
+	// which also hides cookies set before this rule
+	if (fresh || event.request.headers.get('accept')?.includes('text/html')) {
+		event.cookies.set('musestream_viewer', viewer!, {
 			path: '/',
-			httpOnly: false,
+			httpOnly: true,
+			secure: event.url.protocol === 'https:',
 			sameSite: 'lax',
 			maxAge: YEAR
 		});
 	}
-	const name = humanName(viewer);
+	const name = humanName(viewer!);
 	if (event.cookies.get('musestream_name') !== name) {
 		event.cookies.set('musestream_name', name, {
 			path: '/',
@@ -31,6 +35,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 			maxAge: YEAR
 		});
 	}
-	event.locals.viewer = viewer;
+	event.locals.viewer = viewer!;
 	return resolve(event);
 };

@@ -21,3 +21,10 @@ export function pushChat(
 	list.push({ id: msgId, text, cls, author });
 	if (list.length > 50) list.splice(0, list.length - 50);
 }
+
+/** take down a message the owner removed */
+export function removeChat(id: string, serverId: number) {
+	const list = chats[id];
+	const i = list?.findIndex((m) => m.id === serverId) ?? -1;
+	if (i >= 0) list!.splice(i, 1);
+}

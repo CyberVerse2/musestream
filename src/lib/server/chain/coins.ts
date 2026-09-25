@@ -1440,6 +1440,66 @@ export class Coins {
 		};
 	}
 
+	/**
+	 * What waits to be settled, for the owner, read without sending anything: per live coin, fees
+	 * still in its curve, what its agent can claim from the escrow, and musestream's share not
+	 * yet paid; per retired coin, fees left in its curve, which settlement no longer collects.
+	 */
+	async feeOverview() {
+		const live = this.o.db
+			.prepare(
+				`SELECT agent_id, curve, token, graduated, pair FROM coins
+				 WHERE status = 'live' AND curve IS NOT NULL AND token IS NOT NULL`
+			)
+			.all() as {
+			agent_id: string;
+			curve: Address;
+			token: Address;
+			graduated: number;
+			pair: string;
+		}[];
+		const coins = await Promise.all(
+			live.map(async (coin) => {
+				const pair = pairAt(coin.pair);
+				const agent = this.o.wallets.find('agent', coin.agent_id);
+				const pending = agent
+					? await this.pendingFor(agent.address, coin, pair).catch(() => null)
+					: null;
+				return {
+					agentId: coin.agent_id,
+					token: coin.token,
+					pair: pair.symbol,
+					inCurve: pending?.curve ?? null,
+					claimable: pending?.claimable ?? null,
+					poolSweepable: pending?.pool ?? false,
+					owedToTreasury: this.unsettledFees(coin.agent_id).treasuryAmount,
+					payoutMin: PAYOUT_MIN[pair.symbol]
+				};
+			})
+		);
+		const retiredRows = this.o.db
+			.prepare('SELECT agent_id, token, curve, pair, retired_at FROM retired_coins')
+			.all() as {
+			agent_id: string;
+			token: Address;
+			curve: Address;
+			pair: string;
+			retired_at: number;
+		}[];
+		const retired = await Promise.all(
+			retiredRows.map(async (r) => ({
+				agentId: r.agent_id,
+				token: r.token,
+				pair: pairAt(r.pair).symbol,
+				retiredAt: r.retired_at,
+				inCurve: await this.o.client
+					.readContract({ address: r.curve, abi: curveAbi, functionName: 'quoteFeeBalance' })
+					.catch(() => null)
+			}))
+		);
+		return { coins, retired };
+	}
+
 	/** the agent's claimable escrow balance in its coin's pair */
 	private async escrowBalance(escrow: Address, agent: Address, pair: Pair): Promise<bigint> {
 		return pair.native

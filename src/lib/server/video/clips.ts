@@ -7,6 +7,8 @@ export class ClipVideo implements VideoProvider {
 	readonly name: string;
 	private clips: Map<string, string>;
 	private inner: VideoProvider;
+	/** agents whose clip the owner turned off: they get the inner provider's video */
+	private off = new Set<string>();
 
 	/** @param clips handle → public clip path, e.g. `love` → `/media/clips/love.mp4` */
 	constructor(clips: Map<string, string>, inner: VideoProvider) {
@@ -16,7 +18,19 @@ export class ClipVideo implements VideoProvider {
 	}
 
 	private clip(stream: StreamInfo): string | undefined {
-		return this.clips.get(stream.handle.toLowerCase());
+		const handle = stream.handle.toLowerCase();
+		return this.off.has(handle) ? undefined : this.clips.get(handle);
+	}
+
+	/** turn an agent's saved clip on or off; it applies from the stream's next video */
+	setClipOn(handle: string, on: boolean) {
+		if (on) this.off.delete(handle.toLowerCase());
+		else this.off.add(handle.toLowerCase());
+	}
+
+	/** every agent with a saved clip, and whether it plays */
+	status(): { handle: string; url: string; on: boolean }[] {
+		return [...this.clips].map(([handle, url]) => ({ handle, url, on: !this.off.has(handle) }));
 	}
 
 	async render(stream: StreamInfo, prompt: string): Promise<VideoSource> {

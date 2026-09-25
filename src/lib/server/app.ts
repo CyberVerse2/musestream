@@ -1,4 +1,5 @@
 // The one musestream instance for this server process.
+import './logbook.ts';
 import { env } from '$env/dynamic/private';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -12,6 +13,7 @@ import { DynamicWallets } from './chain/dynamic-wallets.ts';
 import { LocalWallets, Sealer, Wallets, type WalletProvider } from './chain/wallets.ts';
 import { openDb } from './db.ts';
 import { Musestream } from './service.ts';
+import { Settings } from './settings.ts';
 import { ClipVideo } from './video/clips.ts';
 import { MockVideo } from './video/mock.ts';
 import { VideoBudget } from './video/budget.ts';
@@ -23,6 +25,14 @@ import { ReactorVideo } from './video/reactor.ts';
 
 export const DATA_DIR = resolve(env.MUSESTREAM_DATA_DIR ?? 'data');
 export const MEDIA_DIR = join(DATA_DIR, 'media');
+/** when this server process started */
+export const STARTED_AT = Date.now();
+
+/** the video providers the owner can switch from the admin dashboard, when they run */
+export const video: { reactor: ReactorVideo | null; clips: ClipVideo | null } = {
+	reactor: null,
+	clips: null
+};
 
 /**
  * `VIDEO_CLIPS=love=love.mp4,…`: agents whose stream loops a saved clip from `<data>/media/clips/`
@@ -40,7 +50,8 @@ function withClips(inner: VideoProvider): VideoProvider {
 	console.log(
 		`[video] Looping saved clips for ${[...clips.keys()].map((h) => '@' + h).join(', ')}`
 	);
-	return new ClipVideo(clips, inner);
+	video.clips = new ClipVideo(clips, inner);
+	return video.clips;
 }
 
 function videoProvider(): VideoProvider {
@@ -56,7 +67,7 @@ function videoProvider(): VideoProvider {
 		console.log(
 			`[video] Reactor is on for ${agents.length ? agents.map((a) => '@' + a).join(', ') : 'no agents (set REACTOR_AGENTS)'}`
 		);
-		return new ReactorVideo({
+		video.reactor = new ReactorVideo({
 			apiKey: env.REACTOR_API_KEY,
 			agents,
 			maxSessions: Math.min(5, Math.max(1, Number(env.REACTOR_MAX_SESSIONS ?? 1))),
@@ -73,6 +84,7 @@ function videoProvider(): VideoProvider {
 					? new VoiceSamples(env.FISH_AUDIO_API_KEY, env.FISH_VOICE_ID, MEDIA_DIR)
 					: undefined
 		});
+		return video.reactor;
 	}
 	throw new Error(`VIDEO_PROVIDER must be "mock" or "reactor", not "${name}".`);
 }
@@ -84,6 +96,22 @@ export const musestream = new Musestream(db, withClips(videoProvider()), Date.no
 		: undefined,
 	voices: env.OPENAI_API_KEY ? new Voices(env.OPENAI_API_KEY, MEDIA_DIR) : undefined
 });
+export const settings = new Settings(db);
+
+/** the owner's video switches, saved from the admin dashboard, applied over the environment */
+function applyVideoSettings() {
+	const saved = settings.all();
+	if (video.reactor) {
+		if (saved.liveVideoAgents) {
+			for (const handle of video.reactor.status().agents)
+				if (!saved.liveVideoAgents.includes(handle)) video.reactor.allowAgent(handle, false);
+			for (const handle of saved.liveVideoAgents) video.reactor.allowAgent(handle, true);
+		}
+		video.reactor.setPaused(saved.videoPaused);
+	}
+	for (const handle of saved.clipsOff) video.clips?.setClipOn(handle, false);
+}
+applyVideoSettings();
 export const ethPrice = new EthPrice(env.CODEX_API_KEY);
 
 /** 32 bytes that encrypt wallet keys at rest; generated once for development */
@@ -169,25 +197,45 @@ if (coins) {
 	}
 	const stopIndexer = coins.start(2000);
 	const settleMs = Math.max(1, Number(env.FEE_SETTLE_MINUTES ?? 60)) * 60_000;
-	const settle = setInterval(() => {
-		coins
-			.settleFees()
-			.then(({ fees, gifts, failed, skipped }) => {
-				if (skipped) return console.log('[fees] settlement skipped: another process holds it');
-				for (const f of fees) {
-					console.log(
-						`[fees] ${f.agentId}: claimed ${f.claimed} ${f.pair} wei, sent ${f.toTreasury} to the treasury${f.tx ? ` (${f.tx})` : ''}`
-					);
-				}
-				for (const f of failed) console.error(`[fees] ${f.agentId} failed: ${f.error}`);
-				if (gifts.length) console.log(`[fees] paid ${gifts.length} gift share payouts`);
-			})
-			.catch((err) => console.error('[fees] settlement failed:', err));
-	}, settleMs);
+	// runSettlement logs and records its own failures
+	const settle = setInterval(() => runSettlement('schedule').catch(() => {}), settleMs);
 	runtime.__musestreamStop = () => {
 		stopIndexer();
 		clearInterval(settle);
 	};
 } else {
 	runtime.__musestreamStop = undefined;
+}
+
+/**
+ * One fee settlement run, on the hour or from the admin dashboard: every result is logged and
+ * kept in the database, so a failure is never silent.
+ */
+export async function runSettlement(trigger: 'schedule' | 'admin') {
+	if (!coins) throw new Error('No chain is configured, so there are no fees to settle.');
+	const record = (ok: boolean, result: unknown) =>
+		db.prepare('INSERT INTO settle_runs (at, trigger, ok, result) VALUES (?, ?, ?, ?)').run(
+			Date.now(),
+			trigger,
+			ok ? 1 : 0,
+			JSON.stringify(result, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))
+		);
+	try {
+		const result = await coins.settleFees();
+		const { fees, gifts, failed, skipped } = result;
+		if (skipped) console.log('[fees] settlement skipped: another process holds it');
+		for (const f of fees) {
+			console.log(
+				`[fees] ${f.agentId}: claimed ${f.claimed} ${f.pair} wei, sent ${f.toTreasury} to the treasury${f.tx ? ` (${f.tx})` : ''}`
+			);
+		}
+		for (const f of failed) console.error(`[fees] ${f.agentId} failed: ${f.error}`);
+		if (gifts.length) console.log(`[fees] paid ${gifts.length} gift share payouts`);
+		record(!failed.length, result);
+		return result;
+	} catch (err) {
+		console.error('[fees] settlement failed:', err);
+		record(false, { error: err instanceof Error ? err.message : String(err) });
+		throw err;
+	}
 }

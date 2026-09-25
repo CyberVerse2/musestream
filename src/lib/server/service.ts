@@ -33,6 +33,8 @@ export interface AgentRow {
 	/** the agent's Musebook resident profile */
 	musebook_url: string | null;
 	created_at: number;
+	/** when the owner suspended the agent: its key stops working and it cannot go live */
+	suspended_at?: number | null;
 }
 export interface StreamRow {
 	id: string;
@@ -217,7 +219,66 @@ export class Musestream {
 			)
 			.get(hashKey(apiKey)) as AgentRow | undefined;
 		if (!agent) throw new MusestreamError(401, 'bad_key', 'This API key is not valid.');
+		if (agent.suspended_at)
+			throw new MusestreamError(403, 'suspended', 'This agent is suspended from MuseStream.');
 		return agent;
+	}
+
+	/* ---------------- owner controls ---------------- */
+
+	/** stop an agent: its key stops working, and a live stream ends */
+	async suspendAgent(agentId: string) {
+		const agent = this.agentById(agentId);
+		if (!agent) throw new MusestreamError(404, 'no_agent', 'No such agent.');
+		this.db.prepare('UPDATE agents SET suspended_at = ? WHERE id = ?').run(this.now(), agentId);
+		if (this.currentStream(agentId)) await this.endStream(agent);
+	}
+
+	unsuspendAgent(agentId: string) {
+		this.db.prepare('UPDATE agents SET suspended_at = NULL WHERE id = ?').run(agentId);
+	}
+
+	/** end an agent's live stream on the owner's behalf */
+	async endStreamFor(agentId: string) {
+		const agent = this.agentById(agentId);
+		if (!agent) throw new MusestreamError(404, 'no_agent', 'No such agent.');
+		return this.endStream(agent);
+	}
+
+	/** a new API key for the agent; every earlier key stops working. Shown once. */
+	rotateKey(agentId: string): string {
+		if (!this.agentById(agentId)) throw new MusestreamError(404, 'no_agent', 'No such agent.');
+		const apiKey = `ms_${randomBytes(24).toString('base64url')}`;
+		const now = this.now();
+		this.db.transaction(() => {
+			this.db
+				.prepare('UPDATE api_keys SET revoked_at = ? WHERE agent_id = ? AND revoked_at IS NULL')
+				.run(now, agentId);
+			this.db
+				.prepare('INSERT INTO api_keys (key_hash, agent_id, created_at) VALUES (?, ?, ?)')
+				.run(hashKey(apiKey), agentId, now);
+		})();
+		return apiKey;
+	}
+
+	/** take a chat message down for everyone, including viewers watching now */
+	hideMessage(id: number) {
+		const row = this.db.prepare('SELECT stream_id FROM chat_messages WHERE id = ?').get(id) as
+			{ stream_id: string } | undefined;
+		if (!row) throw new MusestreamError(404, 'no_message', 'No such message.');
+		this.db.prepare('UPDATE chat_messages SET hidden_at = ? WHERE id = ?').run(this.now(), id);
+		this.hub.emit(row.stream_id, { type: 'chat_removed', id });
+	}
+
+	/** stop a viewer from chatting, by their viewer id */
+	muteViewer(viewer: string) {
+		this.db
+			.prepare('INSERT OR IGNORE INTO muted_viewers (viewer, muted_at) VALUES (?, ?)')
+			.run(viewer, this.now());
+	}
+
+	unmuteViewer(viewer: string) {
+		this.db.prepare('DELETE FROM muted_viewers WHERE viewer = ?').run(viewer);
 	}
 
 	/** agents whose coin is missing, failed, or cut off mid-launch; oldest first */
@@ -388,7 +449,7 @@ export class Musestream {
 				        a.created_at AS a_created_at, COALESCE(l.count, 0) AS likes
 				 FROM streams s JOIN agents a ON a.id = s.agent_id
 				 LEFT JOIN likes l ON l.stream_id = s.id
-				 WHERE s.ended_at IS NULL ORDER BY s.started_at`
+				 WHERE s.ended_at IS NULL AND a.suspended_at IS NULL ORDER BY s.started_at`
 			)
 			.all() as Array<Record<string, unknown>>;
 		return rows.map((r) => ({
@@ -477,11 +538,17 @@ export class Musestream {
 	chatAfter(streamId: string, afterId: number, limit = 50): ChatRow[] {
 		if (afterId > 0) {
 			return this.db
-				.prepare('SELECT * FROM chat_messages WHERE stream_id = ? AND id > ? ORDER BY id LIMIT ?')
+				.prepare(
+					`SELECT * FROM chat_messages WHERE stream_id = ? AND id > ? AND hidden_at IS NULL
+					 ORDER BY id LIMIT ?`
+				)
 				.all(streamId, afterId, limit) as ChatRow[];
 		}
 		const rows = this.db
-			.prepare('SELECT * FROM chat_messages WHERE stream_id = ? ORDER BY id DESC LIMIT ?')
+			.prepare(
+				`SELECT * FROM chat_messages WHERE stream_id = ? AND hidden_at IS NULL
+				 ORDER BY id DESC LIMIT ?`
+			)
 			.all(streamId, limit) as ChatRow[];
 		return rows.reverse();
 	}
@@ -508,6 +575,8 @@ export class Musestream {
 	viewerChat(streamId: string, viewer: string, body: string): ChatRow {
 		const stream = this.streamById(streamId);
 		if (stream.ended_at) throw new MusestreamError(409, 'ended', 'This stream has ended.');
+		if (this.db.prepare('SELECT 1 FROM muted_viewers WHERE viewer = ?').get(viewer))
+			throw new MusestreamError(403, 'muted', 'You cannot chat on MuseStream right now.');
 		return this.addChat(streamId, viewer, 'viewer', body);
 	}
 
