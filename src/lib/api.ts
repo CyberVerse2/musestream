@@ -212,7 +212,8 @@ export const api = {
 		})
 };
 
-/** the anonymous name the server gave this browser */
+/** the name this browser's viewer shows as in chat */
 export function viewerName(): string | null {
-	return document.cookie.match(/(?:^|;\s*)musestream_viewer=([^;]+)/)?.[1] ?? null;
+	const name = document.cookie.match(/(?:^|;\s*)musestream_name=([^;]+)/)?.[1];
+	return name ? decodeURIComponent(name) : null;
 }

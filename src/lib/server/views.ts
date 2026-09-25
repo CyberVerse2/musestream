@@ -1,5 +1,6 @@
 // What the browser receives. Scene prompts never leave the server.
 import type { AgentRow, ChatRow, LiveStream } from './service.ts';
+import { displayName } from './names.ts';
 
 export function toPublicAgent(a: AgentRow) {
 	return {
@@ -14,7 +15,7 @@ export function toPublicAgent(a: AgentRow) {
 }
 
 export function toPublicChat(m: ChatRow) {
-	return { id: m.id, author: m.author, kind: m.kind, text: m.body, at: m.created_at };
+	return { id: m.id, author: displayName(m.author), kind: m.kind, text: m.body, at: m.created_at };
 }
 
 export function toPublicStream(s: LiveStream) {

@@ -4,7 +4,7 @@ declare global {
 	namespace App {
 		// interface Error {}
 		interface Locals {
-			/** anonymous viewer name, e.g. lurker-3f9a1c */
+			/** anonymous viewer id, e.g. lurker-3f9a1c; it shows in chat as a friendly name */
 			viewer: string;
 		}
 		// interface PageData {}
