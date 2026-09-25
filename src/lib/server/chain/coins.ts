@@ -14,6 +14,7 @@ import {
 	encodeAbiParameters,
 	erc20Abi,
 	formatEther,
+	formatUnits,
 	http,
 	keccak256,
 	pad,
@@ -1117,6 +1118,67 @@ export class Coins {
 		});
 		await this.confirm(hash);
 		return hash;
+	}
+
+	/**
+	 * The owner's withdrawal: the treasury's whole balance of each chosen asset goes to `to`.
+	 * Tokens go first, since their transfers need ETH for gas; ETH goes last and leaves behind
+	 * only its own transfer's gas. The daily spending limit guards automatic spending, not this.
+	 */
+	async withdrawTreasury(to: Address, assets: ('META' | 'USDG' | 'ETH')[]) {
+		const treasury = await this.treasury();
+		return this.serial(treasury.address, async () => {
+			type Asset = 'META' | 'USDG' | 'ETH';
+			const sent: { asset: Asset; amount: string; tx: Hash }[] = [];
+			const failed: { asset: Asset; error: string }[] = [];
+			const tokens = [
+				{ asset: 'META' as const, address: META_PAIR.address, decimals: 18 },
+				{ asset: 'USDG' as const, address: USDG, decimals: 6 }
+			].filter((t) => assets.includes(t.asset));
+			for (const t of tokens) {
+				try {
+					const amount = await this.o.client.readContract({
+						address: t.address,
+						abi: erc20Abi,
+						functionName: 'balanceOf',
+						args: [treasury.address]
+					});
+					if (amount === 0n) continue;
+					const tx = await this.sendTokenNow(treasury, t.address, to, amount);
+					sent.push({ asset: t.asset, amount: formatUnits(amount, t.decimals), tx });
+				} catch (err) {
+					failed.push({ asset: t.asset, error: revertReason(err) });
+				}
+			}
+			if (assets.includes('ETH')) {
+				try {
+					const balance = await this.o.client.getBalance({ address: treasury.address });
+					const [estimate, fees] = await Promise.all([
+						this.o.client.estimateGas({ account: treasury.address, to, value: 1n }),
+						this.o.client.estimateFeesPerGas()
+					]);
+					const gas = (estimate * 12n) / 10n;
+					const value = balance - gas * fees.maxFeePerGas;
+					if (value > 0n) {
+						const signer = await this.signer(treasury);
+						const tx = await signer.sendTransaction({
+							to,
+							value,
+							gas,
+							maxFeePerGas: fees.maxFeePerGas,
+							maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+							chain: this.o.client.chain,
+							account: signer.account
+						});
+						await this.confirm(tx);
+						sent.push({ asset: 'ETH', amount: formatEther(value), tx });
+					}
+				} catch (err) {
+					failed.push({ asset: 'ETH', error: revertReason(err) });
+				}
+			}
+			return { from: treasury.address, to, sent, failed };
+		});
 	}
 
 	gasPrice(): Promise<bigint> {

@@ -112,6 +112,43 @@
 		if (out?.apiKey) newKey = { handle, key: out.apiKey };
 	}
 
+	/* ---------- withdraw ---------- */
+	let withdrawTo = $state('');
+	let withdrawAssets = $state<Record<'META' | 'USDG' | 'ETH', boolean>>({
+		META: true,
+		USDG: true,
+		ETH: true
+	});
+	let withdrawn = $state<{
+		to: string;
+		sent: { asset: string; amount: string; tx: string }[];
+		failed: { asset: string; error: string }[];
+	} | null>(null);
+	const withdrawValid = $derived(/^0x[0-9a-fA-F]{40}$/.test(withdrawTo.trim()));
+
+	async function withdraw() {
+		const to = withdrawTo.trim();
+		const assets = (['META', 'USDG', 'ETH'] as const).filter((a) => withdrawAssets[a]);
+		if (!withdrawValid || !assets.length) return;
+		const eth = assets.includes('ETH')
+			? '\n\nETH included: the treasury is left without gas, so settlement, coin launches and viewer gas top-ups stop until it is refilled.'
+			: '';
+		const out = (await act(
+			{ action: 'withdraw', to, assets },
+			`Send the treasury's entire ${assets.join(', ')} balance to\n${to}?\n\nThis cannot be undone. Check the address.${eth}`
+		)) as typeof withdrawn;
+		if (!out) return;
+		withdrawn = out;
+		notice = {
+			ok: !out.failed.length,
+			text: out.failed.length
+				? `Sent ${out.sent.length}, failed ${out.failed.length}: ${out.failed.map((f) => `${f.asset}: ${f.error}`).join('; ')}`
+				: out.sent.length
+					? `Sent ${out.sent.map((s) => `${s.amount} ${s.asset}`).join(', ')}.`
+					: 'Nothing to send: those balances are empty.'
+		};
+	}
+
 	/* ---------- formatting ---------- */
 	const n = (v: number | null | undefined, digits = 4) =>
 		v === null || v === undefined
@@ -289,6 +326,54 @@
 				>
 				· ETH {usd(m.usd.ETH)} · META {usd(m.usd.META)}
 			</p>
+			<form
+				class="withdraw"
+				onsubmit={(e) => {
+					e.preventDefault();
+					void withdraw();
+				}}
+			>
+				<h3>Withdraw from the treasury</h3>
+				<p class="meta">Sends the treasury's whole balance of each asset you tick.</p>
+				<label class="field">
+					<span>To wallet</span>
+					<input
+						bind:value={withdrawTo}
+						placeholder="0x…"
+						autocomplete="off"
+						spellcheck="false"
+						aria-invalid={withdrawTo.trim() !== '' && !withdrawValid}
+					/>
+				</label>
+				<div class="row">
+					{#each ['META', 'USDG', 'ETH'] as const as asset (asset)}
+						<label class="check"
+							><input type="checkbox" bind:checked={withdrawAssets[asset]} />
+							{asset}</label
+						>
+					{/each}
+				</div>
+				<button
+					class="btn-money"
+					disabled={!withdrawValid ||
+						!Object.values(withdrawAssets).some(Boolean) ||
+						busy?.includes('"withdraw"')}
+					>{busy?.includes('"withdraw"') ? 'Sending…' : 'Withdraw'}</button
+				>
+				{#if withdrawn?.sent.length}
+					<ul class="sent">
+						{#each withdrawn.sent as s (s.tx)}
+							<li>
+								{s.amount}
+								{s.asset} ·
+								<a href="{EXPLORER}/tx/{s.tx}" target="_blank" rel="noopener"
+									>{s.tx.slice(0, 10)}…</a
+								>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</form>
 		{:else if o.errors.money}
 			<p class="unavailable">Could not load this section: {o.errors.money}</p>
 		{:else}
@@ -1127,6 +1212,54 @@
 		margin-top: 8px;
 		min-height: 34px;
 		font-size: 13px;
+	}
+	.withdraw {
+		display: grid;
+		gap: 10px;
+		margin-top: 16px;
+		padding: 14px;
+		border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+		border-radius: 14px;
+		max-width: 520px;
+	}
+	.withdraw h3 {
+		font-size: 15px;
+	}
+	.withdraw .field {
+		display: grid;
+		gap: 4px;
+		font-size: 12px;
+	}
+	.withdraw input:not([type='checkbox']) {
+		font: inherit;
+		font-family: ui-monospace, monospace;
+		font-size: 13px;
+		padding: 9px 10px;
+		border-radius: 10px;
+		border: 1px solid var(--line, rgba(255, 255, 255, 0.18));
+		background: transparent;
+		color: inherit;
+	}
+	.withdraw input[aria-invalid='true'] {
+		border-color: var(--agent);
+	}
+	.withdraw .row {
+		display: flex;
+		gap: 16px;
+	}
+	.withdraw .check {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+		font-size: 13px;
+	}
+	.withdraw .btn-money {
+		justify-self: start;
+	}
+	.sent {
+		font-size: 13px;
+		display: grid;
+		gap: 4px;
 	}
 	.bad,
 	.unavailable {

@@ -1,7 +1,8 @@
 // What the owner can do from the admin dashboard. Each action is checked, recorded in the audit
 // log, and applies at once; video switches and the site switch are also saved for restarts.
+import { isAddress, type Address } from 'viem';
 import { z } from 'zod';
-import { musestream, runSettlement, settings, video } from '../app.ts';
+import { coins, musestream, runSettlement, settings, video } from '../app.ts';
 import { MusestreamError } from '../service.ts';
 import { audit, type Admin } from './access.ts';
 
@@ -20,7 +21,12 @@ export const AdminAction = z.discriminatedUnion('action', [
 	z.object({ action: z.literal('hide_message'), messageId: z.number().int().positive() }),
 	z.object({ action: z.literal('mute'), viewer: id }),
 	z.object({ action: z.literal('unmute'), viewer: id }),
-	z.object({ action: z.literal('site_open'), open: z.boolean() })
+	z.object({ action: z.literal('site_open'), open: z.boolean() }),
+	z.object({
+		action: z.literal('withdraw'),
+		to: z.string().refine((v) => isAddress(v), 'Enter a valid wallet address (0x…).'),
+		assets: z.array(z.enum(['META', 'USDG', 'ETH'])).min(1)
+	})
 ]);
 export type AdminAction = z.infer<typeof AdminAction>;
 
@@ -93,5 +99,12 @@ export async function runAction(admin: Admin, a: AdminAction): Promise<unknown> 
 			settings.set('siteOpen', a.open);
 			audit(admin, a.action, null, { open: a.open });
 			return { ok: true };
+		case 'withdraw': {
+			if (!coins)
+				throw new MusestreamError(409, 'no_chain', 'No chain is configured on this server.');
+			const result = await coins.withdrawTreasury(a.to as Address, a.assets);
+			audit(admin, a.action, a.to, { sent: result.sent, failed: result.failed });
+			return result;
+		}
 	}
 }
