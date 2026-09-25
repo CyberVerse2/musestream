@@ -690,10 +690,27 @@
 										· {a.coin.holders} holders
 									</dd>
 								</div>
-							{:else}
+							{:else if a.launch}
 								<div>
 									<dt>Coin</dt>
-									<dd>none yet</dd>
+									<dd>
+										<span class="bad"
+											>{a.launch.status === 'launching'
+												? 'launch started, not finished'
+												: a.launch.status === 'failed'
+													? `launch failed${a.launch.error ? `: ${a.launch.error}` : ''}`
+													: 'not launched'}</span
+										>
+										<button
+											class="btn-quiet"
+											title="The treasury pays the launch fee and gas, on chain."
+											disabled={isBusy({ action: 'retry_launch', agentId: a.id })}
+											onclick={() => act({ action: 'retry_launch', agentId: a.id })}
+											>{isBusy({ action: 'retry_launch', agentId: a.id })
+												? 'Launching…'
+												: 'Retry coin launch'}</button
+										>
+									</dd>
 								</div>
 							{/if}
 							{#if a.wallet}

@@ -233,7 +233,8 @@ async function agents() {
 	return Promise.all(
 		rows.map(async (a) => {
 			const stream = musestream.currentStream(a.id);
-			const coin = coins?.view(a.id) ?? null;
+			const row = coins?.coinFor(a.id) ?? null;
+			const coin = row?.status === 'live' ? (coins?.view(a.id) ?? null) : null;
 			const wallet = coins?.walletsStore.find('agent', a.id) ?? null;
 			const earned = coins?.earnings(a.id);
 			const clip = clips.find((c) => c.handle === a.handle);
@@ -247,6 +248,11 @@ async function agents() {
 							viewers: musestream.viewerCount(stream.id)
 						}
 					: null,
+				/** the coin's launch, when it is not live: missing, failed, or still going */
+				launch:
+					row?.status === 'live'
+						? null
+						: { status: row?.status ?? 'none', error: row?.error ?? null },
 				coin: coin && {
 					token: coin.token,
 					pair: coin.pair.symbol,

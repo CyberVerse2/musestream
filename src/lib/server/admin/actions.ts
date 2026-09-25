@@ -22,6 +22,7 @@ export const AdminAction = z.discriminatedUnion('action', [
 	z.object({ action: z.literal('mute'), viewer: id }),
 	z.object({ action: z.literal('unmute'), viewer: id }),
 	z.object({ action: z.literal('site_open'), open: z.boolean() }),
+	z.object({ action: z.literal('retry_launch'), agentId: id }),
 	z.object({
 		action: z.literal('withdraw'),
 		to: z.string().refine((v) => isAddress(v), 'Enter a valid wallet address (0x…).'),
@@ -101,6 +102,21 @@ export async function runAction(admin: Admin, a: AdminAction): Promise<unknown> 
 			settings.set('siteOpen', a.open);
 			audit(admin, a.action, null, { open: a.open });
 			return { ok: true };
+		case 'retry_launch': {
+			if (!coins)
+				throw new MusestreamError(409, 'no_chain', 'No chain is configured on this server.');
+			const agent = musestream.agentById(a.agentId);
+			if (!agent) throw new MusestreamError(404, 'not_found', 'There is no such agent.');
+			const coin = await coins.launch(agent);
+			audit(admin, a.action, a.agentId, { status: coin.status, error: coin.error });
+			if (coin.status !== 'live')
+				throw new MusestreamError(
+					502,
+					'launch_failed',
+					`The coin did not launch: ${coin.error ?? coin.status}`
+				);
+			return { ok: true, token: coin.token };
+		}
 		case 'withdraw': {
 			if (!coins)
 				throw new MusestreamError(409, 'no_chain', 'No chain is configured on this server.');
