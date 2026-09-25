@@ -170,7 +170,19 @@ if (coins) {
 	const stopIndexer = coins.start(2000);
 	const settleMs = Math.max(1, Number(env.FEE_SETTLE_MINUTES ?? 60)) * 60_000;
 	const settle = setInterval(() => {
-		coins.settleFees().catch((err) => console.error('fee settlement:', err));
+		coins
+			.settleFees()
+			.then(({ fees, gifts, failed, skipped }) => {
+				if (skipped) return console.log('[fees] settlement skipped: another process holds it');
+				for (const f of fees) {
+					console.log(
+						`[fees] ${f.agentId}: claimed ${f.claimed} ${f.pair} wei, sent ${f.toTreasury} to the treasury${f.tx ? ` (${f.tx})` : ''}`
+					);
+				}
+				for (const f of failed) console.error(`[fees] ${f.agentId} failed: ${f.error}`);
+				if (gifts.length) console.log(`[fees] paid ${gifts.length} gift share payouts`);
+			})
+			.catch((err) => console.error('[fees] settlement failed:', err));
 	}, settleMs);
 	runtime.__musestreamStop = () => {
 		stopIndexer();
