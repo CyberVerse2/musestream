@@ -8,6 +8,8 @@ export const account = $state({
 	signedInAs: null as string | null
 });
 
+const LAPSED = 'Your sign-in expired. Sign in again to use your wallet.';
+
 let markConfigLoaded!: () => void;
 /** resolves once the app's config has loaded (or failed to), so callers know the money mode */
 export const configLoaded = new Promise<void>((resolve) => (markConfigLoaded = resolve));
@@ -31,10 +33,35 @@ export async function loadAccount(): Promise<boolean> {
 			showToast('✓', 'Signed in. Your wallet is ready.');
 			return true;
 		}
+		if (config.signedInAs && !(await checkWalletSession())) showToast('⚠', LAPSED);
 	} catch {
 		// the app works without it; trades fall back to what the server offers
 	}
 	return false;
+}
+
+/**
+ * The app keeps a sign-in until the viewer signs out, but the wallet session in this browser can
+ * end sooner. When it has, sign out of the app too, so the app asks for a fresh sign-in instead
+ * of failing when it tries to sign. True while the wallet can sign.
+ */
+export async function checkWalletSession(): Promise<boolean> {
+	const signedInAs = account.signedInAs;
+	if (!signedInAs) return false;
+	const { walletAddress } = await import('../wallet/dynamic');
+	const address = await walletAddress();
+	if (address?.toLowerCase() === signedInAs.toLowerCase()) return true;
+	await api.signOut().catch(() => {});
+	account.signedInAs = null;
+	return false;
+}
+
+/** before signing anything: when the wallet session has ended, ask the viewer to sign in again */
+export async function requireWallet(): Promise<void> {
+	if (await checkWalletSession()) return;
+	const { askSignIn } = await import('./ui.svelte');
+	askSignIn(LAPSED);
+	throw new Error(LAPSED);
 }
 
 /** true when trades must be signed by the viewer's own wallet */

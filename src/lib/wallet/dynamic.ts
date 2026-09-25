@@ -39,6 +39,22 @@ export function initDynamic(environmentId: string, chain: number, rpc: string): 
 	return sdk;
 }
 
+const evmAccount = (client: Sdk['client']) =>
+	client.getWalletAccounts().find((a) => a.chain === 'EVM');
+
+/**
+ * The signed-in wallet's address once Dynamic has restored its session in this browser, or null
+ * when that session has ended. Dynamic restores it a moment after the page loads.
+ */
+export async function walletAddress(): Promise<string | null> {
+	if (!sdk) return null;
+	const { client } = await sdk;
+	for (let i = 0; i < 10 && !evmAccount(client); i++) {
+		await new Promise((r) => setTimeout(r, 300));
+	}
+	return evmAccount(client)?.address ?? null;
+}
+
 type OtpVerification = Awaited<ReturnType<typeof import('@dynamic-labs-sdk/client').sendEmailOTP>>;
 
 /** step 1: email a one-time code */
@@ -80,10 +96,10 @@ export async function finishRedirect(): Promise<string | null> {
  */
 async function afterSignIn(): Promise<string> {
 	const { client, instance } = await sdk!;
-	for (let i = 0; i < 30 && !client.getWalletAccounts().some((a) => a.chain === 'EVM'); i++) {
+	for (let i = 0; i < 30 && !evmAccount(client); i++) {
 		await new Promise((r) => setTimeout(r, 500));
 	}
-	if (!client.getWalletAccounts().some((a) => a.chain === 'EVM'))
+	if (!evmAccount(client))
 		throw new Error('Signed in, but your wallet is not ready yet. Try again in a moment.');
 	if (!instance.token) throw new Error('Signed in, but no session token came back.');
 	return instance.token;
@@ -102,8 +118,8 @@ export async function signOut() {
  */
 export async function sendFromWallet(tx: TxRequest): Promise<`0x${string}`> {
 	const { client, viem } = await sdk!;
-	const walletAccount = client.getWalletAccounts()[0];
-	if (!walletAccount) throw new Error('Sign in first.');
+	const walletAccount = evmAccount(client);
+	if (!walletAccount) throw new Error('Your sign-in expired. Sign in again.');
 	await client.switchActiveNetwork({ walletAccount, networkId: String(chainId) });
 	const dynamicWallet = await viem.createWalletClientForWalletAccount({ walletAccount });
 	const { createWalletClient, http } = await import('viem');

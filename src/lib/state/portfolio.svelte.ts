@@ -3,7 +3,7 @@
 import { api, type Quote, type WalletInfo } from '../api';
 import { showToast } from './notifications.svelte';
 import { setCoin } from './market.svelte';
-import { account, configLoaded, ownWallet } from './account.svelte';
+import { account, configLoaded, ownWallet, requireWallet } from './account.svelte';
 import { transferTx } from '$shared/tx';
 import { USDG, usdgFromCents, usdgToUsd } from '$shared/usdg';
 import { formatEther } from 'viem';
@@ -62,6 +62,7 @@ async function ensureGas() {
  * swap any ETH the trade left behind, above a gas reserve, back into USDG.
  */
 async function sendAll(q: Pick<Quote, 'txs'>) {
+	await requireWallet();
 	await ensureGas();
 	const { sendFromWallet } = await import('../wallet/dynamic');
 	const send = async (txs: Quote['txs']) => {
@@ -120,6 +121,7 @@ export async function payGift(streamId: string, gift: string, usd: number) {
 	if (ownWallet()) {
 		const treasury = account.config?.treasury;
 		if (!treasury) throw new Error('Gifts are unavailable right now.');
+		await requireWallet();
 		await ensureGas();
 		const { sendFromWallet } = await import('../wallet/dynamic');
 		const amount = usdgFromCents(Math.round(usd * 100));
