@@ -1,7 +1,7 @@
 // Fixed clips for chosen agents: their stream loops one saved video, with its sound, and never
 // starts generation. Every other agent goes to the inner provider.
 import type { Act } from './h3-prompts.ts';
-import type { StreamInfo, VideoProvider, VideoSource } from './provider.ts';
+import type { SongClip, StreamInfo, VideoProvider, VideoSource } from './provider.ts';
 
 export class ClipVideo implements VideoProvider {
 	readonly name: string;
@@ -10,7 +10,7 @@ export class ClipVideo implements VideoProvider {
 	/** agents whose clip the owner turned off: they get the inner provider's video */
 	private off = new Set<string>();
 
-	/** @param clips handle → public clip path, e.g. `love` → `/media/clips/love.mp4` */
+	/** @param clips handle → public clip path, e.g. `nova` → `/media/clips/nova.mp4` */
 	constructor(clips: Map<string, string>, inner: VideoProvider) {
 		this.clips = clips;
 		this.inner = inner;
@@ -40,6 +40,14 @@ export class ClipVideo implements VideoProvider {
 
 	act(stream: StreamInfo, scene: string, act: Act): boolean {
 		return !this.clip(stream) && (this.inner.act?.(stream, scene, act) ?? false);
+	}
+
+	perform(stream: StreamInfo, clips: SongClip[]): boolean {
+		return !this.clip(stream) && (this.inner.perform?.(stream, clips) ?? false);
+	}
+
+	live(streamId: string): boolean {
+		return this.inner.live?.(streamId) ?? false;
 	}
 
 	stop(streamId: string): Promise<void> {

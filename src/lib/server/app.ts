@@ -22,6 +22,11 @@ import { VoiceSamples } from './video/voice-sample.ts';
 import { Voices } from './voice.ts';
 import type { VideoProvider } from './video/provider.ts';
 import { ReactorVideo } from './video/reactor.ts';
+import { Lyria } from './music/lyria.ts';
+import { Brain } from './house/brain.ts';
+import { HouseAgent } from './house/agent.ts';
+import { Musebook } from './house/musebook.ts';
+import { PERSONAS } from './house/personas.ts';
 
 export const DATA_DIR = resolve(env.MUSESTREAM_DATA_DIR ?? 'data');
 export const MEDIA_DIR = join(DATA_DIR, 'media');
@@ -35,7 +40,7 @@ export const video: { reactor: ReactorVideo | null; clips: ClipVideo | null } = 
 };
 
 /**
- * `VIDEO_CLIPS=love=love.mp4,…`: agents whose stream loops a saved clip from `<data>/media/clips/`
+ * `VIDEO_CLIPS=nova=nova.mp4,…`: agents whose stream loops a saved clip from `<data>/media/clips/`
  * in place of generated video
  */
 function withClips(inner: VideoProvider): VideoProvider {
@@ -112,6 +117,48 @@ function applyVideoSettings() {
 	for (const handle of saved.clipsOff) video.clips?.setClipOn(handle, false);
 }
 applyVideoSettings();
+
+/**
+ * `HOUSE_AGENTS=love,…`: musestream's own agents, run in this server so there is always
+ * something to watch. They think with OpenAI (`HOUSE_MODEL`) and make songs with Lyria; what
+ * they say, do, and sing plays in their live H3 video. One server per database runs them.
+ */
+function startHouseAgents(): () => void {
+	const handles = (env.HOUSE_AGENTS ?? '')
+		.split(',')
+		.map((h) => h.trim().toLowerCase())
+		.filter(Boolean);
+	if (!handles.length) return () => {};
+	if (!env.OPENAI_API_KEY) {
+		console.error('[house] HOUSE_AGENTS needs OPENAI_API_KEY; house agents are off.');
+		return () => {};
+	}
+	const deps = {
+		musestream,
+		brain: new Brain(env.OPENAI_API_KEY, env.HOUSE_MODEL ?? 'gpt-5.4-mini'),
+		musebook: new Musebook(),
+		lyria: env.GEMINI_API_KEY ? new Lyria(env.GEMINI_API_KEY, MEDIA_DIR) : null,
+		mediaDir: MEDIA_DIR,
+		staticDir: resolve('static'),
+		songsPerDay: Math.max(0, Number(env.HOUSE_SONGS_PER_DAY ?? 10))
+	};
+	const stops: (() => void)[] = [];
+	for (const handle of handles) {
+		const persona = PERSONAS[handle];
+		if (!persona) {
+			console.error(`[house] @${handle} has no persona in house/personas.ts`);
+			continue;
+		}
+		const agent = new HouseAgent(persona, deps);
+		stops.push(() => agent.stop());
+		agent.start().catch((err) => console.error(`[house] @${handle} could not start:`, err));
+	}
+	return () => stops.forEach((stop) => stop());
+}
+// replaced on dev reloads, never doubled
+const house = globalThis as unknown as { __musestreamHouseStop?: () => void };
+house.__musestreamHouseStop?.();
+house.__musestreamHouseStop = startHouseAgents();
 export const ethPrice = new EthPrice(env.CODEX_API_KEY);
 
 /** 32 bytes that encrypt wallet keys at rest; generated once for development */

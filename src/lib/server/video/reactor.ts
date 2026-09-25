@@ -11,10 +11,11 @@
 // - At most `maxSessions` sessions run at once; extra streams get the replay clip.
 // - Each session ends after `maxSeconds`, or sooner if the allowance is smaller. The worker
 //   enforces it, Reactor enforces it on its side, and this class kills a worker that overstays.
+//   If people are still watching and allowance is left, the next session starts.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { join, relative } from 'node:path';
-import type { LiveClip, StreamInfo, VideoProvider, VideoSource } from './provider.ts';
+import type { LiveClip, SongClip, StreamInfo, VideoProvider, VideoSource } from './provider.ts';
 import type { VideoBudget } from './budget.ts';
 import { localImage } from './images.ts';
 import { actClips, idleClip, type Act, type ClipCast } from './h3-prompts.ts';
@@ -107,6 +108,17 @@ export class ReactorVideo implements VideoProvider {
 		running.lastAction = act.action;
 		this.send(running, { idle: idleClip(running.cast, scene, act.action) });
 		return true;
+	}
+
+	perform(stream: StreamInfo, clips: SongClip[]): boolean {
+		const running = this.sessions.get(stream.streamId);
+		if (!running) return false;
+		for (const clip of clips) this.send(running, { clip: { ...clip, kind: 'song' } });
+		return true;
+	}
+
+	live(streamId: string): boolean {
+		return this.sessions.has(streamId);
 	}
 
 	private send(session: Session, msg: object) {
@@ -284,6 +296,18 @@ export class ReactorVideo implements VideoProvider {
 			const used = Math.ceil((Date.now() - startedAt) / 1000);
 			this.opts.budget.add(stream.agentId, day, used - seconds);
 			rejectSource(new Error('Reactor session ended before video was ready'));
+			// a session that ran its course while people watch is followed by the next one; one
+			// that died young is not retried, so a broken setup cannot loop
+			if (
+				used >= MIN_SESSION_SECONDS &&
+				(this.watching.get(stream.streamId) ?? 0) > 0 &&
+				this.canStart(stream)
+			) {
+				this.start(stream, session.lastPrompt)
+					.then((source) => this.listener?.(stream.streamId, source))
+					.catch(() => {});
+				return;
+			}
 			// the paid picture is gone; keep the stream moving with the free clip
 			this.replay(stream, session.lastPrompt)
 				.then((clip) => this.listener?.(stream.streamId, clip))

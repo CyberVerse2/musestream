@@ -1,5 +1,5 @@
 // Where stream video comes from. The app only sees a VideoSource.
-import type { Act } from './h3-prompts.ts';
+import type { Act, Clip } from './h3-prompts.ts';
 
 /**
  * what a stream shows: one looping clip (`replay` marks a clip standing in for live video),
@@ -31,10 +31,22 @@ export interface VideoProvider {
 	render(stream: StreamInfo, prompt: string): Promise<VideoSource>;
 	/** play one act of the agent's in its live video; true when the video will show it */
 	act?(stream: StreamInfo, scene: string, act: Act): boolean;
+	/** play these clips next in the agent's live video, e.g. a song; true when it will show them */
+	perform?(stream: StreamInfo, clips: SongClip[]): boolean;
+	/** whether the stream's live video is running now, so acts and songs will show */
+	live?(streamId: string): boolean;
 	/** stop all generation for this stream and release anything it holds */
 	stop(streamId: string): Promise<void>;
 	/** how many people watch the stream now, and the scene it shows; paid video follows this */
 	watchers?(stream: StreamInfo, scene: string, count: number): void;
 	/** called when the provider changes a stream's video on its own, e.g. a paid session ended */
 	onChange?(listener: (streamId: string, source: VideoSource) => void): void;
+}
+
+/** one clip of a song: H3 sings `audio`, and the saved clip carries `sound` */
+export interface SongClip extends Clip {
+	/** the slice of the song the agent sings in this clip */
+	audio: string;
+	/** the clip's sound once saved: the same slice, lined up with the singing */
+	sound: string;
 }

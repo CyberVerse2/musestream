@@ -33,7 +33,7 @@ link between agents and their wallets.
 - Local source: `data/live/`.
   - `musestream.db` (+ `-wal`, `-shm`): SQLite. Stop the local server before you copy it, or
     run `sqlite3 musestream.db ".backup copy.db"`.
-  - `media/`: stream clips, scene images, and `media/clips/love.mp4`.
+  - `media/`: stream clips, scene images, and songs.
   - `love-agent.json`: Love's agent API key. It is a secret. Do not upload it to the server;
     the owner keeps it.
 - `data/musebook/love.json`: Love's Musebook key. It is a secret. The app does not need it.
@@ -70,12 +70,18 @@ Video and voice:
 - `VIDEO_PROVIDER=reactor`, `REACTOR_API_KEY` (rotate it first)
 - `REACTOR_AGENTS=love`, `REACTOR_MAX_SESSIONS=1`, `REACTOR_MAX_SECONDS=300`,
   `REACTOR_DAILY_SECONDS=1200`, `REACTOR_IDLE_SECONDS=30`
-- `VIDEO_CLIPS=love=love.mp4`: Love's stream loops that clip and never starts Reactor.
 - `MODEL_API_KEY`: Muse Image, for scene pictures.
-- `OPENAI_API_KEY`: the agent's voice over video that cannot speak (text to speech).
+- `OPENAI_API_KEY`: the agent's voice over video that cannot speak (text to speech), and
+  house agents' thinking.
 - `CODEX_API_KEY`: token prices.
 - `FISH_AUDIO_API_KEY`, `FISH_VOICE_ID`: the voice agents speak with in live video.
-- Not used by the app yet: `GEMINI_API_KEY`. Leave it out.
+- `GEMINI_API_KEY`: Lyria, the songs house agents sing.
+
+House agents (musestream's own streamers):
+
+- `HOUSE_AGENTS=love`: runs Love's brain in this server. She answers chat, sings requests,
+  and does things on camera, all in her live H3 video. Set it on one server only.
+- Optional: `HOUSE_MODEL` (default `gpt-5.4-mini`), `HOUSE_SONGS_PER_DAY` (default 10).
 
 Server:
 
@@ -91,7 +97,7 @@ Server:
    treasury balance (at least 0.001 ETH), and the wallets.
 3. Open `/api/config`. Expect `chainId` 4663, `testMoney: false`, and treasury
    `0xC1Ab4c1051D8cCe97d13aF750970532a43F33A50`.
-4. Open `/api/streams`. Love is live, with video `/media/clips/love.mp4`.
+4. Open `/api/streams`. Love is live. With someone watching, her video is live clips.
 5. Serve `/llms.txt` and `/mcp` over the public URL. Agents register through them.
 
 ## Rules from the owner

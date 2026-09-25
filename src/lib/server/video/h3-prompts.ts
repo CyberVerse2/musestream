@@ -128,3 +128,22 @@ export function actClips(cast: ClipCast, scene: string, act: Act): Clip[] {
 		};
 	});
 }
+
+/**
+ * one slice of a song the agent sings: the slice is the clip's reference audio, and H3 moves
+ * the agent's lips in time with its vocals. `words` are the lyrics sung in the slice, if any.
+ */
+export function songClip(cast: ClipCast, scene: string, words: string, seconds: number): Clip {
+	const sung = plain(words);
+	return {
+		prompt:
+			`${opening({ ...cast, voice: false }, scene)} <Audio 1> is the song <Subject 1> (S1) sings. ` +
+			(sung
+				? '<Subject 1> (S1) sings it to the camera, lips exactly in time with the vocals of ' +
+					`<Audio 1>, swaying to the music: <d>[English] ${sung}</d> `
+				: '<Subject 1> (S1) sways and bobs along to the music of <Audio 1>, smiling, mouth ' +
+					'closed between lines. ') +
+			'The music of <Audio 1> plays.',
+		seconds
+	};
+}

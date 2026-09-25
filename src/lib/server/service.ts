@@ -3,7 +3,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DB } from './db.ts';
 import { Hub } from './hub.ts';
-import type { StreamInfo, VideoProvider, VideoSource } from './video/provider.ts';
+import type { SongClip, StreamInfo, VideoProvider, VideoSource } from './video/provider.ts';
 import type { SceneImages } from './video/scene-image.ts';
 import type { Voices } from './voice.ts';
 import type { Act } from './video/h3-prompts.ts';
@@ -599,6 +599,18 @@ export class Musestream {
 		void this.voices.speak(act.say).then((voice) => {
 			if (voice) this.hub.emit(stream.id, { type: 'voice', voice });
 		});
+	}
+
+	/** play a song in the agent's live video, next; false when live video is not running */
+	perform(agent: AgentRow, clips: SongClip[]): boolean {
+		const stream = this.requireStream(agent.id);
+		return this.provider.perform?.(streamInfo(stream, agent), clips) ?? false;
+	}
+
+	/** whether the agent's live video is running now, so its acts and songs will show */
+	liveVideo(agent: AgentRow): boolean {
+		const stream = this.currentStream(agent.id);
+		return !!stream && (this.provider.live?.(stream.id) ?? false);
 	}
 
 	like(streamId: string, count: number): number {
