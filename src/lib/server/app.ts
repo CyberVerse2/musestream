@@ -239,21 +239,31 @@ runtime.__musestreamStop?.();
 if (coins) {
 	// load the ETH rate early so the first prices can show dollars
 	void ethPrice.usd();
-	// on a test chain, give coins to agents that registered before coins existed (once per process)
+	// give a coin to every agent without one (once per process). On a test chain that covers
+	// agents from before coins existed and failed launches. On the live chain a launch spends
+	// real gas, so only agents whose launch never started are retried; a failed one waits for
+	// the owner.
 	const once = globalThis as unknown as { __musestreamBackfilled?: boolean };
-	if (coins.testMoney && !once.__musestreamBackfilled) {
+	if (!once.__musestreamBackfilled) {
 		once.__musestreamBackfilled = true;
 		void (async () => {
 			for (const agent of musestream.agentsWithoutCoins()) {
-				const coin = await coins.launch(agent);
-				console.log(`[chain] launched $${agent.handle.toUpperCase()}: ${coin.status}`);
+				if (!coins.testMoney && coins.coinFor(agent.id)) continue;
+				try {
+					const coin = await coins.launch(agent);
+					console.log(`[chain] launched $${agent.handle.toUpperCase()}: ${coin.status}`);
+				} catch (err) {
+					console.error(`[chain] coin launch for @${agent.handle} failed:`, err);
+				}
 			}
 		})();
 	}
 	const stopIndexer = coins.start(2000);
-	const settleMs = Math.max(1, Number(env.FEE_SETTLE_MINUTES ?? 60)) * 60_000;
 	// runSettlement logs and records its own failures
-	const settle = setInterval(() => runSettlement('schedule').catch(() => {}), settleMs);
+	const settle = settlementOn
+		? setInterval(() => runSettlement('schedule').catch(() => {}), settleEveryMinutes * 60_000)
+		: undefined;
+	if (!settlementOn) console.log('[fees] settlement is off here: set FEE_SETTLE=on to run it');
 	runtime.__musestreamStop = () => {
 		stopIndexer();
 		clearInterval(settle);

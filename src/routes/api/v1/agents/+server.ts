@@ -13,8 +13,12 @@ export const POST = (event) =>
 		if (!dev) perAddress(event.getClientAddress());
 		const input = await body(event, RegisterAgent);
 		const { agent, apiKey } = musestream.registerAgent(input);
-		// every agent gets a coin; the launch finishes in the background
-		if (coins) void coins.launch(agent);
+		// every agent gets a coin; the launch finishes in the background, and a failure is logged
+		// rather than taking the server down
+		if (coins)
+			coins
+				.launch(agent)
+				.catch((err) => console.error(`[chain] coin launch for @${agent.handle} failed:`, err));
 		// the coin launches now and its details are permanent; say what it will be missing
 		const missing = [
 			!input.musebookUrl && 'musebookUrl (your Musebook profile, the coin’s website)',
