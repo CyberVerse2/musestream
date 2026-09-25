@@ -7,8 +7,9 @@ The Node server starts this process when a stream should show generated video.
 
 H3 plays a queue of 5 to 15 second clips in a 9:16 frame. Each clip continues from the one
 before it, and every clip gets the same references: the --image pictures, in order, and the
---voice sample as the host's voice. A clip can bring its own reference audio instead, such
-as a slice of a song: H3 then sings it, lips in time with it. The server writes each clip's
+--voice sample as the host's voice (idle clips get no voice sample, and are saved silent). A
+clip can bring its own reference audio instead, such as a slice of a song: H3 then sings it,
+lips in time with it. The server writes each clip's
 prompt. Between the clips it asks for, the worker keeps an idle clip queued, so the picture
 never stops.
 
@@ -156,11 +157,13 @@ class ClipFile:
         self.thread.join()
         pcm = self.out / f".{self.name}.pcm"
         pcm.write_bytes(bytes(self.sound))
-        sound = (
-            ["-i", self.sound_file]
-            if self.sound_file
-            else ["-f", "s16le", "-ar", str(AUDIO_RATE), "-ac", str(AUDIO_CHANNELS), "-i", str(pcm)]
-        )
+        if self.sound_file:
+            sound = ["-i", self.sound_file]
+        elif self.kind == "idle":
+            # the host is quiet between beats; whatever H3 murmured is left out
+            sound = ["-f", "lavfi", "-i", f"anullsrc=r={AUDIO_RATE}:cl=mono"]
+        else:
+            sound = ["-f", "s16le", "-ar", str(AUDIO_RATE), "-ac", str(AUDIO_CHANNELS), "-i", str(pcm)]
         part = self.out / f".{self.name}.mp4"
         result = subprocess.run(
             [
@@ -320,7 +323,9 @@ class ClipQueue:
             if path not in self.clip_audios:
                 self.clip_audios[path] = asyncio.ensure_future(self.reactor.upload_file(path))
             payload["reference_audios"] = [await self.clip_audios[path]]
-        elif self.audios:
+        elif self.audios and kind != "idle":
+            # H3 repeats the words of its reference audio when a clip gives it nothing to say,
+            # so a silent idle clip gets no voice sample to recite
             payload["reference_audios"] = self.audios
         if clip.get("sound"):
             self.recorder.sounds[tag] = clip["sound"]
