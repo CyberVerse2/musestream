@@ -178,6 +178,14 @@ export const pairPrices = coins
 export const charts = coins && pairPrices ? new Charts(coins, pairPrices, env.CODEX_API_KEY) : null;
 export const wallets = coins ? coins.walletsStore : null;
 
+/**
+ * Fee settlement moves real money, so on the live chain it runs only where `FEE_SETTLE=on`
+ * (production). Any other server on the live chain keeps its own copy of the ledger and would
+ * pay the same fees a second time. On a test chain it always runs.
+ */
+export const settlementOn = !!coins && (coins.testMoney || env.FEE_SETTLE === 'on');
+export const settleEveryMinutes = Math.max(1, Number(env.FEE_SETTLE_MINUTES ?? 60));
+
 // background work: index trades, settle fees. Replaced on dev reloads, never doubled.
 const runtime = globalThis as unknown as { __musestreamStop?: () => void };
 runtime.__musestreamStop?.();
@@ -213,6 +221,8 @@ if (coins) {
  */
 export async function runSettlement(trigger: 'schedule' | 'admin') {
 	if (!coins) throw new Error('No chain is configured, so there are no fees to settle.');
+	if (!settlementOn)
+		throw new Error('Settlement is off on this server. Production settles with FEE_SETTLE=on.');
 	const record = (ok: boolean, result: unknown) =>
 		db.prepare('INSERT INTO settle_runs (at, trigger, ok, result) VALUES (?, ?, ?, ?)').run(
 			Date.now(),

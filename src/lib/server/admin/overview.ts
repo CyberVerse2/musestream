@@ -6,7 +6,17 @@ import { createPublicClient, erc20Abi, formatUnits, http, type Address } from 'v
 import { robinhood } from 'viem/chains';
 import { ETH_PAIR, META_PAIR, pairAt } from '../../../../shared/pairs.ts';
 import { USDG } from '../../../../shared/usdg.ts';
-import { coins, db, musestream, pairPrices, settings, STARTED_AT, video } from '../app.ts';
+import {
+	coins,
+	db,
+	musestream,
+	pairPrices,
+	settings,
+	settleEveryMinutes,
+	settlementOn,
+	STARTED_AT,
+	video
+} from '../app.ts';
 import { recentLogs } from '../logbook.ts';
 import { displayName } from '../names.ts';
 
@@ -92,7 +102,8 @@ async function settlement() {
 	const fees = coins ? await coins.feeOverview() : { coins: [], retired: [] };
 	return {
 		runs,
-		everyMinutes: Number(env.FEE_SETTLE_MINUTES ?? 60),
+		on: settlementOn,
+		everyMinutes: settleEveryMinutes,
 		coins: fees.coins.map((c) => ({
 			handle: handles.get(c.agentId) ?? c.agentId,
 			agentId: c.agentId,

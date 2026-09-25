@@ -40,6 +40,7 @@ npm run dev                  # with CHAIN_RPC_URL=http://127.0.0.1:8545 and CHAI
 | `DYNAMIC_WALLET_PASSWORD`             | none     | Encrypts the key shares Dynamic backs up for server wallets                            |
 | `TREASURY_DAILY_SPEND_ETH`            | `0.05`   | Most ETH the treasury sends for gas per UTC day                                        |
 | `FEE_SETTLE_MINUTES`                  | `60`     | How often fees and gift shares are settled                                             |
+| `FEE_SETTLE`                          | off      | `on` settles fees on the live chain: production only. A test chain always settles      |
 | `GAS_TOPUP_GAS`                       | `600000` | Gas a low viewer wallet gets, once per account per day                                 |
 | `CODEX_API_KEY`                       | none     | Price candles after graduation, and the ETH/USD rate                                   |
 | `VIDEO_PROVIDER`                      | `mock`   | `mock` (free) or `reactor` (paid H3 video)                                             |
@@ -101,7 +102,7 @@ A viewer's own wallet swaps through the pair's USDG market as part of each trade
 
 **Gifts** are paid in USDG (Global Dollar, `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`) to the treasury; the agent gets 70% and musestream 30%. Robinhood Chain has almost no USDC, so the app does not use it.
 
-**Settlement** runs every `FEE_SETTLE_MINUTES`: each agent's wallet sweeps its curve's fees into the Pons escrow, claims them, and sends the treasury musestream's share in the coin's pair; then the treasury pays each agent its gift share in USDG. A lease in the database lets only one process settle at a time.
+**Settlement** runs every `FEE_SETTLE_MINUTES` on the server with `FEE_SETTLE=on`: each agent's wallet sweeps its curve's fees into the Pons escrow, claims them, and sends the treasury musestream's share in the coin's pair; then the treasury pays each agent its gift share in USDG. A lease in the database lets only one process settle at a time. The lease lives in each server's own database, so only production has `FEE_SETTLE=on`: a local server on the live chain would pay the same fees again from its own ledger.
 
 **Graduation.** Once the curve holds its threshold, `graduate` sweeps it and the factory's `createGraduatedPool` seeds the coin's Uniswap V4 pool, with the Pons hook charging the fee and tax. The crossing buy's gas estimate can leave too little for graduation, so the indexer finishes both steps from the agent's wallet. After graduation, trades go through Uniswap's Universal Router (`shared/v4.ts`), and the price comes from the pool. Pool fees split like curve fees.
 

@@ -177,7 +177,9 @@
 			out.push(`Treasury gas lasts about ${n(m.daysLeft, 1)} more day(s) at last week's spend.`);
 		for (const [name, error] of Object.entries(o.errors))
 			out.push(`The ${name} section could not load: ${error}`);
-		if (o.settlement) {
+		if (o.settlement && !o.settlement.on)
+			out.push('Fee settlement is off on this server: FEE_SETTLE is not "on".');
+		if (o.settlement?.on) {
 			const last = o.settlement.runs[0];
 			if (last && !last.ok) out.push(`The last fee settlement (${ago(last.at)}) had failures.`);
 			const hour = o.settlement.everyMinutes * 60_000;
@@ -299,12 +301,18 @@
 		{#if o.settlement}
 			<div class="head">
 				<h2>Fee settlement</h2>
-				<button class="btn-money" disabled={isBusy({ action: 'settle_now' })} onclick={settleNow}
+				<button
+					class="btn-money"
+					disabled={!o.settlement.on || isBusy({ action: 'settle_now' })}
+					onclick={settleNow}
 					>{isBusy({ action: 'settle_now' }) ? 'Settling…' : 'Settle now'}</button
 				>
 			</div>
 			<p class="meta">
-				Runs every {o.settlement.everyMinutes} minutes. Last run: {o.settlement.runs[0]
+				{o.settlement.on
+					? `Runs every ${o.settlement.everyMinutes} minutes.`
+					: 'Off on this server: only the server with FEE_SETTLE=on settles.'} Last run: {o
+					.settlement.runs[0]
 					? `${ago(o.settlement.runs[0].at)}, ${o.settlement.runs[0].ok ? 'ok' : 'with failures'}`
 					: 'none recorded yet'}.
 			</p>
