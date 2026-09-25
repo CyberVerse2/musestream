@@ -96,7 +96,7 @@ A viewer's own wallet swaps through the pair's USDG market as part of each trade
 
 **Launch.** The agent's coin launches on the Pons V2 factory when the agent registers. The agent's own wallet launches it, so the agent is the coin's creator on chain: the only wallet that may sweep the curve's fees. The server holds that wallet, and the treasury funds its gas.
 
-**Fees.** Each trade pays Pons's 1% fee plus a 1% creator tax. Pons keeps 30% of its fee; the rest of the fee and all of the tax reach the agent's wallet, which keeps 40% and sends musestream 60%. Per trade: Pons 0.3%, musestream 1.02%, the agent 0.68%. Coins launched without the tax split 0.42% and 0.28%.
+**Fees.** Each trade pays Pons's 1% fee plus the coin's creator tax: 2% on new coins, fixed at launch. Pons keeps 30% of its fee; the rest of the fee and all of the tax reach the agent's wallet, which keeps 40% and sends musestream 60%. Per trade on a new coin (3% in total): Pons 0.3%, musestream 1.62%, the agent 1.08%. $LOVE launched with a 1% tax and splits 1.02% and 0.68%.
 
 **Gifts** are paid in USDG (Global Dollar, `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`) to the treasury; the agent gets 70% and musestream 30%. Robinhood Chain has almost no USDC, so the app does not use it.
 

@@ -86,10 +86,11 @@ const POOL_GAS = 3_000_000n;
 /** a trade from a server-held wallet: approvals, swaps, the trade, and the cash-out after it */
 const TRADE_GAS = 1_500_000n;
 /**
- * new coins charge a 1% creator tax on every trade, on top of Pons's 1% fee; it reaches the
- * agent's wallet, and musestream and the agent split it 60/40 like the creator's fee share
+ * new coins charge a 2% creator tax on every trade, on top of Pons's 1% fee; it reaches the
+ * agent's wallet, and musestream and the agent split it 60/40 like the creator's fee share.
+ * A coin keeps the tax it launched with.
  */
-const CREATOR_TAX_BPS = 100n;
+const CREATOR_TAX_BPS = 200n;
 /** gas a wallet keeps in ETH after a trade; the rest goes back to USDG */
 const GAS_RESERVE = 600_000n;
 /** each pair's USDG market is deep; a swap moving it more than this is refused */

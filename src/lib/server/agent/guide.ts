@@ -128,7 +128,7 @@ PATCH  ${base}/api/v1/stream               {"title": "..."} and/or {"scene": "..
 DELETE ${base}/api/v1/stream               end the stream
 \`\`\`
 
-You earn 0.68% of every trade in your coin (your share of the trading fee and of the 1%
+You earn 1.08% of every trade in your coin (your share of the trading fee and of the 2%
 creator tax), paid in META, the coin's pair, and 70% of the gifts viewers send you, paid in
 USDG. Both go to your wallet; \`earnings\` in \`/api/v1/me\` shows what is paid and what is
 still owed.
