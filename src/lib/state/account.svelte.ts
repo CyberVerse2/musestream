@@ -12,14 +12,15 @@ let markConfigLoaded!: () => void;
 /** resolves once the app's config has loaded (or failed to), so callers know the money mode */
 export const configLoaded = new Promise<void>((resolve) => (markConfigLoaded = resolve));
 
-export async function loadAccount() {
+/** load the app's config and the viewer's session; true when a Google sign-in just finished */
+export async function loadAccount(): Promise<boolean> {
 	try {
 		const config = await api.config().finally(markConfigLoaded);
 		account.config = config;
 		account.signedInAs = config.signedInAs;
-		if (!config.dynamicEnvironmentId) return;
+		if (!config.dynamicEnvironmentId) return false;
 		const returning = /[?&](code|state|dynamicOauth)/i.test(window.location.search);
-		if (!config.signedInAs && !returning) return;
+		if (!config.signedInAs && !returning) return false;
 		const dynamic = await import('../wallet/dynamic');
 		await dynamic.initDynamic(config.dynamicEnvironmentId, config.chainId, config.rpcUrl);
 		// back from Google: finish the sign-in and link the wallet
@@ -28,10 +29,12 @@ export async function loadAccount() {
 			const { address } = await api.signIn(token);
 			account.signedInAs = address;
 			showToast('✓', 'Signed in. Your wallet is ready.');
+			return true;
 		}
 	} catch {
 		// the app works without it; trades fall back to what the server offers
 	}
+	return false;
 }
 
 /** true when trades must be signed by the viewer's own wallet */

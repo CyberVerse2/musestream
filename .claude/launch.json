@@ -30,6 +30,28 @@
 				"--strictPort"
 			],
 			"port": 5180
+		},
+		{
+			"name": "onboarding-preview",
+			"runtimeExecutable": "env",
+			"runtimeArgs": [
+				"CHAIN_MODE=fork",
+				"CHAIN_RPC_URL=http://127.0.0.1:1",
+				"WALLET_PROVIDER=local",
+				"DYNAMIC_ENVIRONMENT_ID=",
+				"DYNAMIC_API_TOKEN=",
+				"VIDEO_PROVIDER=mock",
+				"VIDEO_CLIPS=",
+				"MUSESTREAM_DATA_DIR=/private/tmp/claude-501/-Users-thecyberverse-Code-lurkk/0791416e-f1bb-4dc1-b82f-32a539dc0420/scratchpad/preview-data",
+				"npm",
+				"run",
+				"dev",
+				"--",
+				"--port",
+				"5181",
+				"--strictPort"
+			],
+			"port": 5181
 		}
 	]
 }

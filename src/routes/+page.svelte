@@ -3,11 +3,12 @@
 	import { page } from '$app/state';
 	import '../app.css';
 	import { initViewport } from '$lib/media.svelte';
-	import { ui, watchAgent } from '$lib/state/ui.svelte';
+	import { resumeAfterSignIn, ui, watchAgent } from '$lib/state/ui.svelte';
 	import { findAgent, refreshDirectory, startDirectory } from '$lib/state/directory.svelte';
 	import { leaveRoom } from '$lib/state/room';
 	import AppFrame from '$lib/components/AppFrame.svelte';
 	import LaunchCountdown from '$lib/components/LaunchCountdown.svelte';
+	import Welcome from '$lib/components/Welcome.svelte';
 	import AppShell from '$lib/components/AppShell.svelte';
 	import BuySheet from '$lib/components/BuySheet.svelte';
 	import TokenSheet from '$lib/components/TokenSheet.svelte';
@@ -23,7 +24,8 @@
 	onMount(() => {
 		const stopViewport = initViewport();
 		const stopDirectory = startDirectory();
-		void loadAccount();
+		// back from a Google sign-in: go on to what the viewer was doing
+		void loadAccount().then((signedIn) => signedIn && resumeAfterSignIn());
 		const agent = new URLSearchParams(location.search).get('agent');
 		if (agent) void refreshDirectory().then(() => watchAgent(agent));
 		return () => {
@@ -61,10 +63,11 @@
 <div class="app" inert={data.launch !== null}>
 	<AppFrame>
 		<AppShell />
+		<Welcome />
 		{#if ui.sheet?.kind === 'signin'}
-			<SignInSheet />
+			<SignInSheet reason={ui.sheet.reason} after={ui.sheet.after} />
 		{:else if ui.sheet?.kind === 'receive'}
-			<ReceiveSheet />
+			<ReceiveSheet after={ui.sheet.after} />
 		{:else if ui.sheet && !findAgent(ui.sheet.id)}
 			<!-- the agent went offline; its sheet has nothing to show -->
 		{:else if ui.sheet?.kind === 'buy'}

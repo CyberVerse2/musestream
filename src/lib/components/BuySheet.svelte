@@ -1,7 +1,7 @@
 <script lang="ts">
 	import AgentAvatar from './AgentAvatar.svelte';
 	import { onDestroy } from 'svelte';
-	import { closeSheet, openReceive } from '$lib/state/ui.svelte';
+	import { addMoneyFor, closeSheet } from '$lib/state/ui.svelte';
 	import { buy, refreshWallet, balanceUsd, wallet } from '$lib/state/portfolio.svelte';
 	import { coinOf } from '$lib/state/market.svelte';
 	import { agentById } from '$lib/state/directory.svelte';
@@ -81,15 +81,16 @@
 				<dt>You get</dt>
 				<dd>≈ {fmtTok(tokens)} {sym}</dd>
 			</div>
-			<div>
-				<dt>Fee</dt>
-				<dd>{tok.feePct}% · a share goes to {agent.name}</dd>
-			</div>
 		</dl>
 
 		{#if error}<p class="error" role="alert">{error}</p>{/if}
 		{#if short && wallet.info?.ownWallet}
-			<button class="btn-money confirm" onclick={openReceive}>Add money to buy</button>
+			<p class="short">
+				You have {fmtCash(balance)}. Add money to buy {fmtUsd(usd)} of {sym}.
+			</p>
+			<button class="btn-money confirm" onclick={() => addMoneyFor({ kind: 'buy', id })}
+				>Add money</button
+			>
 		{:else}
 			<button class="btn-money confirm" disabled={short || busy} onclick={confirm}>
 				{busy ? 'Buying…' : short ? 'Not enough balance' : `Buy $${usd} of ${sym}`}
@@ -110,6 +111,12 @@
 </Sheet>
 
 <style>
+	.short {
+		margin-top: 16px;
+		font-size: 14px;
+		text-align: center;
+		color: var(--mut);
+	}
 	.head {
 		display: flex;
 		align-items: center;

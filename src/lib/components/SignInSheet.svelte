@@ -3,9 +3,16 @@
 	import Sheet from './Sheet.svelte';
 	import { api } from '$lib/api';
 	import { account } from '$lib/state/account.svelte';
-	import { closeSheet } from '$lib/state/ui.svelte';
+	import {
+		closeSheet,
+		continueWith,
+		rememberAfterSignIn,
+		type SheetState
+	} from '$lib/state/ui.svelte';
 	import { refreshWallet } from '$lib/state/portfolio.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
+
+	let { reason, after }: { reason?: string; after?: SheetState } = $props();
 
 	let step = $state<'email' | 'code'>('email');
 	let email = $state('');
@@ -41,6 +48,7 @@
 			const dynamic = await import('$lib/wallet/dynamic');
 			await dynamic.initDynamic(cfg.dynamicEnvironmentId!, cfg.chainId, cfg.rpcUrl);
 			// leaves the page; the sign-in finishes when Google sends the viewer back
+			rememberAfterSignIn(after);
 			await dynamic.signInWithGoogle();
 		});
 
@@ -52,14 +60,17 @@
 			account.signedInAs = address;
 			await refreshWallet();
 			showToast('✓', 'Signed in. Your wallet is ready.');
-			closeSheet();
+			continueWith(after);
 		});
 </script>
 
 <Sheet label="Sign in" onclose={closeSheet}>
 	<h2>Sign in</h2>
 	{#if step === 'email'}
-		<p class="lede">Signing in creates a wallet that only you control.</p>
+		<p class="lede">
+			{reason ? `${reason} ` : ''}It takes a few seconds and gives you a wallet that only you
+			control.
+		</p>
 		<button class="btn-quiet google" disabled={busy} onclick={google}>
 			<svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true">
 				<path

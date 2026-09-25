@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import type { Agent } from '$lib/data';
-	import { ui } from '$lib/state/ui.svelte';
+	import { askSignIn, needsSignIn, openReceive, ui } from '$lib/state/ui.svelte';
 	import { balanceUsd, payGift, refreshWallet, wallet } from '$lib/state/portfolio.svelte';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import { fmtCash } from '$lib/format';
@@ -37,8 +37,15 @@
 	});
 
 	function send(gift: GiftChoice) {
+		if (needsSignIn()) {
+			ui.giftsOpen = false;
+			askSignIn(`Sign in to send ${agent.name} a gift.`);
+			return;
+		}
 		if (wallet.info && gift.usd > balanceUsd()) {
-			showToast('⚠', `Not enough balance for ${gift.name}`);
+			ui.giftsOpen = false;
+			showToast('⚠', `${gift.name} costs ${fmtCash(gift.usd)}. Add money to send it.`);
+			if (wallet.info.ownWallet) openReceive();
 			return;
 		}
 		payGift(agent.streamId, gift.id, gift.usd).catch((err: unknown) =>
