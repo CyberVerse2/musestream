@@ -5,12 +5,12 @@
 	import { directory } from '$lib/state/directory.svelte';
 	import AgentAvatar from './AgentAvatar.svelte';
 	import { fmtTok } from '$lib/format';
-	import { Broadcast, Compass, UserCircle, Wallet } from 'phosphor-svelte';
+	import { Broadcast, Compass, VideoCamera, Wallet } from 'phosphor-svelte';
 	const tabs = [
 		{ id: 'live', label: 'Live', Icon: Broadcast },
 		{ id: 'explore', label: 'Explore', Icon: Compass },
 		{ id: 'wallet', label: 'Wallet', Icon: Wallet },
-		{ id: 'profile', label: 'Profile', Icon: UserCircle }
+		{ id: 'golive', label: 'Go live', Icon: VideoCamera }
 	] as const satisfies readonly { id: Tab; label: string; Icon: unknown }[];
 </script>
 

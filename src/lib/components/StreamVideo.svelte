@@ -10,8 +10,11 @@
 	let {
 		video,
 		poster = '',
-		playing = true
-	}: { video: VideoSource | null; poster?: string; playing?: boolean } = $props();
+		playing = true,
+		sound = true
+	}: { video: VideoSource | null; poster?: string; playing?: boolean; sound?: boolean } = $props();
+
+	const muted = $derived(!sound || ui.player.muted);
 
 	// live clips keep one player for the whole session, so it can chain them
 	const key = $derived(
@@ -35,12 +38,12 @@
 			{#if video.kind === 'clips'}
 				<div
 					class="chain"
-					use:chain={{ clips: video.clips, muted: ui.player.muted, playing }}
+					use:chain={{ clips: video.clips, muted, playing }}
 					in:fade={{ duration: reducedMotion() ? 0 : 600 }}
 				></div>
 			{:else}
 				<video
-					muted={ui.player.muted}
+					{muted}
 					loop
 					playsinline
 					preload="auto"

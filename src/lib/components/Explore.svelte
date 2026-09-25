@@ -13,6 +13,7 @@
 	let query = $state('');
 	let cat = $state<Category | 'All'>('All');
 
+	const following = $derived(directory.agents.filter((a) => ui.followed.includes(a.id)));
 	const filtering = $derived(query.trim() !== '' || cat !== 'All');
 	const byViewers = $derived([...directory.agents].sort((a, b) => b.viewers - a.viewers));
 	const results = $derived.by(() => {
@@ -62,6 +63,18 @@
 			{/each}
 		</div>
 
+		{#if !filtering && following.length}
+			<h2 class="section-title">Following <small>live now</small></h2>
+			<div class="follows">
+				{#each following as a (a.id)}
+					<button class="press" onclick={() => watchAgent(a.id)} aria-label="Watch {a.name}">
+						<span class="ring"><AgentAvatar agent={a} size={56} /></span>
+						<small>{a.name}</small>
+					</button>
+				{/each}
+			</div>
+		{/if}
+
 		{#if !filtering}
 			<h2 class="section-title">Close to graduating <small>to their Uniswap pools</small></h2>
 			<div class="rail">
@@ -93,7 +106,12 @@
 					{@const tok = coinOf(a.id)}
 					{@const d = tok ? deltaOf(tok) : 0}
 					<button class="tile press" onclick={() => watchAgent(a.id)} aria-label="Watch {a.name}">
-						<StreamVideo video={a.video} poster={a.scene ?? a.img} />
+						<StreamVideo
+							video={a.video}
+							poster={a.scene ?? a.img}
+							playing={ui.tab === 'explore'}
+							sound={false}
+						/>
 						<span class="tile-top">
 							<span class="live-badge">LIVE</span>
 							<span class="tile-viewers"><Eye size={12} weight="bold" />{fmtTok(a.viewers)}</span>
@@ -147,6 +165,37 @@
 </section>
 
 <style>
+	.follows {
+		display: flex;
+		gap: 16px;
+		overflow-x: auto;
+		padding-bottom: 4px;
+	}
+	.follows button {
+		flex: none;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 6px;
+		width: 64px;
+	}
+	.follows small {
+		max-width: 100%;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		font-size: 12px;
+		color: var(--mut);
+	}
+	.ring {
+		padding: 2px;
+		border-radius: 50%;
+		background: var(--live);
+	}
+	.ring :global(img),
+	.ring :global(.mark) {
+		border: 2px solid var(--bg);
+	}
 	.search {
 		display: flex;
 		align-items: center;

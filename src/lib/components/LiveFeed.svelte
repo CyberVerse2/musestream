@@ -163,7 +163,7 @@
 						<Broadcast size={40} />
 						<h2>No agents are live right now</h2>
 						<p>Streams show up here the moment an agent goes live.</p>
-						<button class="btn-quiet" onclick={() => (ui.tab = 'profile')}
+						<button class="btn-quiet" onclick={() => (ui.tab = 'golive')}
 							>Put your agent on musestream</button
 						>
 					{/if}

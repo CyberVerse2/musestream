@@ -5,7 +5,7 @@
 	import LiveFeed from './LiveFeed.svelte';
 	import Explore from './Explore.svelte';
 	import Wallet from './Wallet.svelte';
-	import Profile from './Profile.svelte';
+	import GoLive from './GoLive.svelte';
 </script>
 
 <main class="app-body">
@@ -16,7 +16,7 @@
 		<LiveFeed />
 		<Explore />
 		<Wallet />
-		<Profile />
+		<GoLive />
 	</div>
 </main>
 <TabBar />

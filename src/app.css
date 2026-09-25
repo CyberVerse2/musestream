@@ -121,7 +121,7 @@ input {
 	display: block;
 }
 
-/* scrolling pages: Explore, Wallet, Profile */
+/* scrolling pages: Explore, Wallet, Go live */
 .page {
 	overflow-y: auto;
 	scrollbar-width: none;

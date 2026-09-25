@@ -3,7 +3,8 @@
 	import { onMount } from 'svelte';
 	import { refreshWallet, wallet } from '$lib/state/portfolio.svelte';
 	import { ui, openToken, openSignIn, openReceive } from '$lib/state/ui.svelte';
-	import { canSignIn } from '$lib/state/account.svelte';
+	import { account, canSignIn } from '$lib/state/account.svelte';
+	import { api } from '$lib/api';
 	import { showToast } from '$lib/state/notifications.svelte';
 	import { fmtCash, fmtPct, fmtTok } from '$lib/format';
 	import { DOWN, UP, sparkline, trendColor } from '$lib/sparkline';
@@ -74,6 +75,14 @@
 		return `${Math.round(sec / 3600)}h`;
 	}
 	const short = $derived(info ? `${info.address.slice(0, 6)}…${info.address.slice(-4)}` : '');
+	async function signOut() {
+		await api.signOut();
+		const dynamic = await import('$lib/wallet/dynamic');
+		await dynamic.signOut();
+		account.signedInAs = null;
+		await refreshWallet();
+	}
+
 	async function copyAddress() {
 		if (!info) return;
 		try {
@@ -205,10 +214,21 @@
 				<p class="quiet">Your trades show up here.</p>
 			{/if}
 		{/if}
+
+		{#if account.signedInAs}
+			<button class="btn-quiet sign-out" onclick={signOut}>Sign out</button>
+		{/if}
 	</div>
 </section>
 
 <style>
+	.sign-out {
+		display: block;
+		margin: 32px auto 0;
+		min-height: 40px;
+		padding: 0 18px;
+		font-size: 14px;
+	}
 	.head {
 		display: flex;
 		align-items: center;
