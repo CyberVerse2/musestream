@@ -114,6 +114,8 @@
 
 	/* ---------- withdraw ---------- */
 	let withdrawTo = $state('');
+	/** 'treasury', or the id of the agent whose wallet is emptied */
+	let withdrawFrom = $state('treasury');
 	let withdrawAssets = $state<Record<'META' | 'USDG' | 'ETH', boolean>>({
 		META: true,
 		USDG: true,
@@ -121,22 +123,53 @@
 	});
 	let withdrawn = $state<{
 		to: string;
+		collected: string[];
 		sent: { asset: string; amount: string; tx: string }[];
 		failed: { asset: string; error: string }[];
 	} | null>(null);
 	const withdrawValid = $derived(/^0x[0-9a-fA-F]{40}$/.test(withdrawTo.trim()));
 
-	async function withdraw() {
-		const to = withdrawTo.trim();
+	/** the withdrawal waiting for the owner's second click, shown on the page */
+	let reviewing = $state<{
+		to: string;
+		assets: ('META' | 'USDG' | 'ETH')[];
+		from: string;
+		label: string;
+		held: { eth: number | null; meta: number | null; usdg: number | null } | null;
+	} | null>(null);
+
+	function reviewWithdraw() {
 		const assets = (['META', 'USDG', 'ETH'] as const).filter((a) => withdrawAssets[a]);
 		if (!withdrawValid || !assets.length) return;
-		const eth = assets.includes('ETH')
-			? '\n\nETH included: the treasury is left without gas, so settlement, coin launches and viewer gas top-ups stop until it is refilled.'
-			: '';
-		const out = (await act(
-			{ action: 'withdraw', to, assets },
-			`Send the treasury's entire ${assets.join(', ')} balance to\n${to}?\n\nThis cannot be undone. Check the address.${eth}`
-		)) as typeof withdrawn;
+		const agent = o.agents?.find((a) => a.id === withdrawFrom);
+		reviewing =
+			withdrawFrom === 'treasury'
+				? {
+						to: withdrawTo.trim(),
+						assets,
+						from: 'treasury',
+						label: 'The treasury',
+						held: o.money?.held ?? null
+					}
+				: {
+						to: withdrawTo.trim(),
+						assets,
+						from: withdrawFrom,
+						label: `@${agent?.handle ?? 'agent'}'s wallet`,
+						held: agent?.wallet ?? null
+					};
+	}
+
+	async function withdraw() {
+		if (!reviewing) return;
+		const { to, assets, from } = reviewing;
+		const out = (await act({
+			action: 'withdraw',
+			to,
+			assets,
+			...(from !== 'treasury' && { agentId: from })
+		})) as typeof withdrawn;
+		reviewing = null;
 		if (!out) return;
 		withdrawn = out;
 		notice = {
@@ -147,6 +180,7 @@
 					? `Sent ${out.sent.map((s) => `${s.amount} ${s.asset}`).join(', ')}.`
 					: 'Nothing to send: those balances are empty.'
 		};
+		if (out.collected.length) notice.text = `${out.collected.join('; ')}. ${notice.text}`;
 	}
 
 	/* ---------- formatting ---------- */
@@ -330,11 +364,23 @@
 				class="withdraw"
 				onsubmit={(e) => {
 					e.preventDefault();
-					void withdraw();
+					reviewWithdraw();
 				}}
 			>
-				<h3>Withdraw from the treasury</h3>
-				<p class="meta">Sends the treasury's whole balance of each asset you tick.</p>
+				<h3>Withdraw</h3>
+				<p class="meta">
+					Sends a wallet's whole balance of each asset you tick. From an agent's wallet, its fees
+					still in the curve and escrow are collected first.
+				</p>
+				<label class="field">
+					<span>From</span>
+					<select bind:value={withdrawFrom} onchange={() => (reviewing = null)}>
+						<option value="treasury">Treasury</option>
+						{#each o.agents?.filter((a) => a.wallet) ?? [] as a (a.id)}
+							<option value={a.id}>@{a.handle}'s wallet</option>
+						{/each}
+					</select>
+				</label>
 				<label class="field">
 					<span>To wallet</span>
 					<input
@@ -353,13 +399,54 @@
 						>
 					{/each}
 				</div>
-				<button
-					class="btn-money"
-					disabled={!withdrawValid ||
-						!Object.values(withdrawAssets).some(Boolean) ||
-						busy?.includes('"withdraw"')}
-					>{busy?.includes('"withdraw"') ? 'Sending…' : 'Withdraw'}</button
-				>
+				{#if reviewing}
+					{@const r = reviewing}
+					<div class="review" role="alert">
+						<p>
+							<b>Send everything?</b>
+							{r.label}'s whole balance goes to <code>{r.to}</code>:
+						</p>
+						<ul>
+							{#if r.assets.includes('META')}<li>
+									{n(r.held?.meta, 6)} META{r.from !== 'treasury'
+										? ', plus fees collected from the curve and escrow'
+										: ''}
+								</li>{/if}
+							{#if r.assets.includes('USDG')}<li>{usd(r.held?.usdg)} USDG</li>{/if}
+							{#if r.assets.includes('ETH')}<li>
+									{n(r.held?.eth, 6)} ETH, minus this transfer's gas
+								</li>{/if}
+						</ul>
+						{#if r.assets.includes('ETH')}
+							<p class="bad">
+								{r.from === 'treasury'
+									? 'Sending the ETH leaves the treasury without gas: settlement, coin launches, gift payouts and viewer gas top-ups stop until it is refilled.'
+									: "Sending the ETH leaves this agent's wallet without gas: its fee collection stops until it is refilled."}
+							</p>
+						{/if}
+						<p>This cannot be undone. Check the address.</p>
+						<div class="row">
+							<button
+								type="button"
+								class="btn-money"
+								disabled={busy?.includes('"withdraw"')}
+								onclick={withdraw}>{busy?.includes('"withdraw"') ? 'Sending…' : 'Send now'}</button
+							>
+							<button
+								type="button"
+								class="btn-quiet"
+								disabled={busy?.includes('"withdraw"')}
+								onclick={() => (reviewing = null)}>Cancel</button
+							>
+						</div>
+					</div>
+				{:else}
+					<button
+						class="btn-money"
+						disabled={!withdrawValid || !Object.values(withdrawAssets).some(Boolean)}
+						>Withdraw</button
+					>
+				{/if}
 				{#if withdrawn?.sent.length}
 					<ul class="sent">
 						{#each withdrawn.sent as s (s.tx)}
@@ -1230,6 +1317,7 @@
 		gap: 4px;
 		font-size: 12px;
 	}
+	.withdraw select,
 	.withdraw input:not([type='checkbox']) {
 		font: inherit;
 		font-family: ui-monospace, monospace;
@@ -1255,6 +1343,20 @@
 	}
 	.withdraw .btn-money {
 		justify-self: start;
+	}
+	.review {
+		display: grid;
+		gap: 8px;
+		padding: 12px;
+		border-radius: 12px;
+		border: 1px solid var(--line-2);
+		font-size: 13px;
+	}
+	.review code {
+		word-break: break-all;
+	}
+	.review ul {
+		padding-left: 18px;
 	}
 	.sent {
 		font-size: 13px;

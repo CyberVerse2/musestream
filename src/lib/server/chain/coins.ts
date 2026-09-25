@@ -92,6 +92,8 @@ const TRADE_GAS = 1_500_000n;
  * A coin keeps the tax it launched with.
  */
 const CREATOR_TAX_BPS = 200n;
+/** what the owner can withdraw from a wallet */
+export type WithdrawAsset = 'META' | 'USDG' | 'ETH';
 /** gas a wallet keeps in ETH after a trade; the rest goes back to USDG */
 const GAS_RESERVE = 600_000n;
 /** each pair's USDG market is deep; a swap moving it more than this is refused */
@@ -1121,64 +1123,140 @@ export class Coins {
 	}
 
 	/**
-	 * The owner's withdrawal: the treasury's whole balance of each chosen asset goes to `to`.
-	 * Tokens go first, since their transfers need ETH for gas; ETH goes last and leaves behind
-	 * only its own transfer's gas. The daily spending limit guards automatic spending, not this.
+	 * The owner's withdrawal from the treasury: its whole balance of each chosen asset goes to
+	 * `to`. The daily spending limit guards automatic spending, not this.
 	 */
-	async withdrawTreasury(to: Address, assets: ('META' | 'USDG' | 'ETH')[]) {
+	async withdrawTreasury(to: Address, assets: WithdrawAsset[]) {
 		const treasury = await this.treasury();
-		return this.serial(treasury.address, async () => {
-			type Asset = 'META' | 'USDG' | 'ETH';
-			const sent: { asset: Asset; amount: string; tx: Hash }[] = [];
-			const failed: { asset: Asset; error: string }[] = [];
-			const tokens = [
-				{ asset: 'META' as const, address: META_PAIR.address, decimals: 18 },
-				{ asset: 'USDG' as const, address: USDG, decimals: 6 }
-			].filter((t) => assets.includes(t.asset));
-			for (const t of tokens) {
-				try {
-					const amount = await this.o.client.readContract({
-						address: t.address,
-						abi: erc20Abi,
-						functionName: 'balanceOf',
-						args: [treasury.address]
-					});
-					if (amount === 0n) continue;
-					const tx = await this.sendTokenNow(treasury, t.address, to, amount);
-					sent.push({ asset: t.asset, amount: formatUnits(amount, t.decimals), tx });
-				} catch (err) {
-					failed.push({ asset: t.asset, error: revertReason(err) });
-				}
-			}
-			if (assets.includes('ETH')) {
-				try {
-					const balance = await this.o.client.getBalance({ address: treasury.address });
-					const [estimate, fees] = await Promise.all([
-						this.o.client.estimateGas({ account: treasury.address, to, value: 1n }),
-						this.o.client.estimateFeesPerGas()
-					]);
-					const gas = (estimate * 12n) / 10n;
-					const value = balance - gas * fees.maxFeePerGas;
-					if (value > 0n) {
-						const signer = await this.signer(treasury);
-						const tx = await signer.sendTransaction({
-							to,
-							value,
-							gas,
-							maxFeePerGas: fees.maxFeePerGas,
-							maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
-							chain: this.o.client.chain,
-							account: signer.account
-						});
-						await this.confirm(tx);
-						sent.push({ asset: 'ETH', amount: formatEther(value), tx });
+		return this.serial(treasury.address, async () => ({
+			from: treasury.address,
+			to,
+			collected: [],
+			...(await this.sendAll(treasury, to, assets))
+		}));
+	}
+
+	/**
+	 * The owner's withdrawal from an agent's wallet. With META chosen, the fees still in its
+	 * coin's curve and in the Pons escrow are collected into the wallet first, so everything it
+	 * has earned goes. The fee ledger is not changed: settlement still expects musestream's share
+	 * to be paid from this wallet.
+	 */
+	async withdrawAgent(agentId: string, to: Address, assets: WithdrawAsset[]) {
+		const wallet = this.o.wallets.find('agent', agentId);
+		if (!wallet) throw new MusestreamError(404, 'no_wallet', 'This agent has no wallet here.');
+		return this.serial(wallet.address, async () => {
+			const collected: string[] = [];
+			const coin = this.coinFor(agentId);
+			if (assets.includes('META') && coin?.status === 'live' && coin.curve && coin.token) {
+				const pair = pairAt(coin.pair);
+				const signer = await this.signer(wallet);
+				const base = { chain: this.o.client.chain, account: signer.account };
+				const pending = await this.pendingFor(
+					wallet.address,
+					{ curve: coin.curve, token: coin.token, graduated: coin.graduated },
+					pair
+				);
+				// each step is best-effort: what is already in the wallet still goes if one fails
+				const step = async (what: string, run: () => Promise<string | null>) => {
+					try {
+						const done = await run();
+						if (done) collected.push(done);
+					} catch (err) {
+						collected.push(`could not ${what}: ${revertReason(err)}`);
 					}
-				} catch (err) {
-					failed.push({ asset: 'ETH', error: revertReason(err) });
-				}
+				};
+				await step('sweep the curve', async () => {
+					if (pending.curve === 0n) return null;
+					await this.confirm(
+						await signer.writeContract({
+							...base,
+							address: coin.curve!,
+							abi: curveAbi,
+							functionName: 'sweepFees',
+							args: [0n]
+						})
+					);
+					return `swept ${formatEther(pending.curve)} ${pair.symbol} from the curve`;
+				});
+				await step('claim from the escrow', async () => {
+					const claimable = await this.escrowBalance(pending.escrow, wallet.address, pair);
+					if (claimable === 0n) return null;
+					await this.confirm(
+						pair.native
+							? await signer.writeContract({
+									...base,
+									address: pending.escrow,
+									abi: escrowAbi,
+									functionName: 'claim'
+								})
+							: await signer.writeContract({
+									...base,
+									address: pending.escrow,
+									abi: escrowTokenAbi,
+									functionName: 'claimToken',
+									args: [pair.address]
+								})
+					);
+					return `claimed ${formatEther(claimable)} ${pair.symbol} from the escrow`;
+				});
 			}
-			return { from: treasury.address, to, sent, failed };
+			return { from: wallet.address, to, collected, ...(await this.sendAll(wallet, to, assets)) };
 		});
+	}
+
+	/** send `from`'s whole balance of each asset: tokens first, since they need ETH for gas;
+	 *  ETH last, leaving behind only its own transfer's gas. Each asset succeeds or fails alone. */
+	private async sendAll(from: WalletRow, to: Address, assets: WithdrawAsset[]) {
+		const sent: { asset: WithdrawAsset; amount: string; tx: Hash }[] = [];
+		const failed: { asset: WithdrawAsset; error: string }[] = [];
+		const tokens = [
+			{ asset: 'META' as const, address: META_PAIR.address, decimals: 18 },
+			{ asset: 'USDG' as const, address: USDG, decimals: 6 }
+		].filter((t) => assets.includes(t.asset));
+		for (const t of tokens) {
+			try {
+				const amount = await this.o.client.readContract({
+					address: t.address,
+					abi: erc20Abi,
+					functionName: 'balanceOf',
+					args: [from.address]
+				});
+				if (amount === 0n) continue;
+				const tx = await this.sendTokenNow(from, t.address, to, amount);
+				sent.push({ asset: t.asset, amount: formatUnits(amount, t.decimals), tx });
+			} catch (err) {
+				failed.push({ asset: t.asset, error: revertReason(err) });
+			}
+		}
+		if (assets.includes('ETH')) {
+			try {
+				const balance = await this.o.client.getBalance({ address: from.address });
+				const [estimate, fees] = await Promise.all([
+					this.o.client.estimateGas({ account: from.address, to, value: 1n }),
+					this.o.client.estimateFeesPerGas()
+				]);
+				const gas = (estimate * 12n) / 10n;
+				const value = balance - gas * fees.maxFeePerGas;
+				if (value > 0n) {
+					const signer = await this.signer(from);
+					const tx = await signer.sendTransaction({
+						to,
+						value,
+						gas,
+						maxFeePerGas: fees.maxFeePerGas,
+						maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+						chain: this.o.client.chain,
+						account: signer.account
+					});
+					await this.confirm(tx);
+					sent.push({ asset: 'ETH', amount: formatEther(value), tx });
+				}
+			} catch (err) {
+				failed.push({ asset: 'ETH', error: revertReason(err) });
+			}
+		}
+		return { sent, failed };
 	}
 
 	gasPrice(): Promise<bigint> {
